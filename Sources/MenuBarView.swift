@@ -202,6 +202,9 @@ struct DisplaySection: View {
     @State private var expanded = true
     @State private var displayModes: [DisplayModeInfo] = []
     @State private var displayCurrentMode: DisplayModeInfo?
+    /// Cached physical display modes — captured before VD activation, used for
+    /// HiDPI Native and VD lists so they don't change when VD is active
+    @State private var physicalModes: [DisplayModeInfo] = []
 
     private var displayIcon: String {
         display.isBuiltIn ? "laptopcomputer" : "display"
@@ -238,8 +241,13 @@ struct DisplaySection: View {
     private func refreshDisplayModes() {
         displayModes = DisplayModeService.availableModes(for: display.id)
 
-        // When Virtual Display is active and this display is mirrored,
-        // read current mode from the VD (mirror master) instead of the physical (mirror slave)
+        // Cache physical modes when VD is NOT active — these represent the
+        // real display capabilities, unaffected by VD mirror modes
+        if !VirtualDisplayManager.isActive || physicalModes.isEmpty {
+            physicalModes = displayModes
+        }
+
+        // When VD is active, read current mode from VD (mirror master)
         if !display.isBuiltIn && VirtualDisplayManager.isActive {
             let vdID = VirtualDisplayManager.virtualDisplayID
             if vdID != 0 {
@@ -341,18 +349,25 @@ struct DisplaySection: View {
 
     @ViewBuilder
     private var hiDPISection: some View {
-        // Virtual display resolutions (always show these)
-        let virtualResolutions = VirtualDisplayManager.scaledResolutions(
-            nativeWidth: display.nativeWidth,
-            nativeHeight: display.nativeHeight
-        )
-        let virtualWidths = Set(virtualResolutions.map { $0.logical.0 })
+        // Use physicalModes (cached before VD activation) for stable lists
+        let modesForLists = physicalModes.isEmpty ? displayModes : physicalModes
 
-        // Native HiDPI modes — exclude any resolution that matches a virtual display resolution
-        // to prevent confusing overlap (clicking a "native" mode that's actually from VD fails)
-        let nativeHiDPI = deduplicate(displayModes
-            .filter { $0.isHiDPI && $0.width >= 1920 && $0.height >= 540 && !virtualWidths.contains($0.width) }
+        // Native HiDPI = modes where the physical display already supports HiDPI
+        let nativeHiDPI = deduplicate(modesForLists
+            .filter { $0.isHiDPI && $0.width >= 1920 && $0.height >= 540 }
             .sorted { $0.width > $1.width })
+
+        // Virtual Display = standard modes that DON'T have a native HiDPI counterpart
+        let nativeHiDPIWidths = Set(nativeHiDPI.map { $0.width })
+        let virtualResolutions = deduplicate(modesForLists
+            .filter { !$0.isHiDPI && $0.width >= display.nativeWidth / 2 && $0.height >= 540
+                && !nativeHiDPIWidths.contains($0.width) }
+            .sorted { $0.width > $1.width })
+            .map { mode -> (logical: (Int, Int), backing: (Int, Int), label: String) in
+                let pct = Int(round(Double(mode.height) / Double(display.nativeHeight) * 100))
+                let label = mode.width == display.nativeWidth ? "Native HiDPI" : "\(pct)% scaled"
+                return (logical: (mode.width, mode.height), backing: (mode.width * 2, mode.height * 2), label: label)
+            }
 
         // Disable HiDPI button when virtual display is active
         if manager.hiDPIActive {
@@ -562,11 +577,13 @@ struct DisplaySection: View {
         // On built-in displays, show both since there's no virtual display involved.
         let showHiDPI = display.isBuiltIn
 
-        let hiDPIModes = showHiDPI ? deduplicate(displayModes
+        let modesForList = physicalModes.isEmpty ? displayModes : physicalModes
+
+        let hiDPIModes = showHiDPI ? deduplicate(modesForList
             .filter { $0.isHiDPI && $0.width >= minWidth }
             .sorted { $0.width > $1.width }) : []
 
-        let stdModes = deduplicate(displayModes
+        let stdModes = deduplicate(modesForList
             .filter { !$0.isHiDPI && $0.width >= minWidth && $0.height >= minHeight }
             .sorted { $0.width > $1.width })
 
