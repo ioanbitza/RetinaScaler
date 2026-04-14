@@ -204,15 +204,9 @@ enum VirtualDisplayManager {
         let physID = mirroredPhysicalID
 
         if physID != 0 {
-            let physMode = CGDisplayCopyDisplayMode(physID)
-            let displayW = Int32(physMode?.width ?? 1920)
-            let displayH = Int32(physMode?.height ?? 1080)
-            let pos = aboveCentered(displayW: displayW, displayH: displayH)
-
             var config: CGDisplayConfigRef?
             if CGBeginDisplayConfiguration(&config) == .success {
                 CGConfigureDisplayMirrorOfDisplay(config, physID, kCGNullDirectDisplay)
-                CGConfigureDisplayOrigin(config, physID, pos.x, pos.y)
                 CGCompleteDisplayConfiguration(config, .permanently)
                 logger.info("Unmirror + reposition to (\(pos.x), \(pos.y))")
             }
@@ -319,8 +313,6 @@ enum VirtualDisplayManager {
         vDisplayID: CGDirectDisplayID, mode: CGDisplayMode,
         physicalDisplayID: CGDirectDisplayID
     ) -> Result<String, RetinaScalerError> {
-        let pos = aboveCentered(displayW: Int32(mode.width), displayH: Int32(mode.height))
-
         var config: CGDisplayConfigRef?
         guard CGBeginDisplayConfiguration(&config) == .success else {
             return .failure(.modeSwitchFailed)
@@ -328,7 +320,6 @@ enum VirtualDisplayManager {
 
         CGConfigureDisplayMirrorOfDisplay(config, physicalDisplayID, vDisplayID)
         CGConfigureDisplayWithDisplayMode(config, vDisplayID, mode, nil)
-        CGConfigureDisplayOrigin(config, vDisplayID, pos.x, pos.y)
 
         guard CGCompleteDisplayConfiguration(config, .permanently) == .success else {
             return .failure(.modeSwitchFailed)
