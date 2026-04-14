@@ -267,7 +267,16 @@ enum VirtualDisplayManager {
         vDisplayID: CGDirectDisplayID, mode: CGDisplayMode,
         physicalDisplayID: CGDirectDisplayID
     ) -> Result<String, RetinaScalerError> {
-        let physBounds = CGDisplayBounds(physicalDisplayID)
+        // Save current position of VD or physical display before mode switch
+        let currentBounds: CGRect
+        if CGDisplayIsOnline(vDisplayID) != 0 {
+            currentBounds = CGDisplayBounds(vDisplayID)
+        } else {
+            currentBounds = CGDisplayBounds(physicalDisplayID)
+        }
+        let savedX = Int32(currentBounds.origin.x)
+        let savedY = Int32(currentBounds.origin.y)
+
         let wasMain = CGDisplayIsMain(physicalDisplayID) != 0
             || CGDisplayIsMain(vDisplayID) != 0
 
@@ -276,16 +285,12 @@ enum VirtualDisplayManager {
             return .failure(.modeSwitchFailed)
         }
 
-        // Set mirror and mode on virtual display
         CGConfigureDisplayMirrorOfDisplay(config, physicalDisplayID, vDisplayID)
         CGConfigureDisplayWithDisplayMode(config, vDisplayID, mode, nil)
 
-        if wasMain {
-            CGConfigureDisplayOrigin(config, vDisplayID, Int32(physBounds.origin.x), Int32(physBounds.origin.y))
-        }
+        // Restore the saved position so display doesn't jump
+        CGConfigureDisplayOrigin(config, vDisplayID, savedX, savedY)
 
-        // Use .permanently for stable frame pacing — .forSession causes periodic revalidation
-        // that manifests as micro-stutters every few seconds
         guard CGCompleteDisplayConfiguration(config, .permanently) == .success else {
             return .failure(.modeSwitchFailed)
         }
@@ -293,7 +298,7 @@ enum VirtualDisplayManager {
         mirroredPhysicalID = physicalDisplayID
 
         let hz = Int(mode.refreshRate)
-        logger.info("HiDPI mode set: \(mode.width)x\(mode.height) @ \(hz)Hz (backing \(mode.pixelWidth)x\(mode.pixelHeight))")
+        logger.info("HiDPI mode set: \(mode.width)x\(mode.height) @ \(hz)Hz at position (\(savedX),\(savedY))")
         return .success("\(mode.width)×\(mode.height) HiDPI @ \(hz)Hz active")
     }
 

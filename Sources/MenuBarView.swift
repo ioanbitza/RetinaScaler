@@ -425,9 +425,12 @@ struct DisplaySection: View {
     }
 
     private func hiDPIRow(_ mode: DisplayModeInfo, isVirtual: Bool) -> some View {
-        let isCurrent = displayCurrentMode?.width == mode.width
+        // Native HiDPI rows should only show checkmark when VD is NOT active
+        // Virtual HiDPI rows should only show checkmark when VD IS active
+        let resolutionMatches = displayCurrentMode?.width == mode.width
             && displayCurrentMode?.height == mode.height
             && displayCurrentMode?.isHiDPI == mode.isHiDPI
+        let isCurrent = resolutionMatches && !manager.hiDPIActive
 
         return Button {
             manager.switchMode(to: mode, for: display)
