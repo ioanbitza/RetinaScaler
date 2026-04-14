@@ -1,57 +1,135 @@
-name: Build & Release
+name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      release_notes:
+        description: 'Release notes (optional — auto-generated if empty)'
+        required: false
+        type: string
 
 jobs:
-  build:
+  release:
     runs-on: macos-15
+    if: github.ref == 'refs/heads/main'
+    concurrency:
+      group: release
+      cancel-in-progress: false
     permissions:
       contents: write
 
-    env:
-      TAG_VERSION: ${{ github.ref_name }}
-
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate next version
+        id: version
+        env:
+          RELEASE_TYPE: ${{ inputs.release_type }}
+        run: |
+          LATEST=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ -z "$LATEST" ]; then
+            LATEST="v0.0.0"
+          fi
+
+          MAJOR=$(echo "$LATEST" | sed 's/v//' | cut -d. -f1)
+          MINOR=$(echo "$LATEST" | sed 's/v//' | cut -d. -f2)
+          PATCH=$(echo "$LATEST" | sed 's/v//' | cut -d. -f3)
+
+          case "$RELEASE_TYPE" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Previous: $LATEST → New: v$VERSION ($RELEASE_TYPE)"
 
       - name: Build release binary
         run: swift build -c release
 
       - name: Prepare .app bundle
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           APP="RetinaScaler.app"
           mkdir -p "$APP/Contents/MacOS"
           mkdir -p "$APP/Contents/Resources"
           cp .build/release/RetinaScaler "$APP/Contents/MacOS/RetinaScaler"
-          cp RetinaScaler.app/Contents/Info.plist "$APP/Contents/Info.plist" 2>/dev/null || true
 
-          VERSION="${TAG_VERSION#v}"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
+          cat > "$APP/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDisplayName</key>
+            <string>RetinaScaler</string>
+            <key>CFBundleExecutable</key>
+            <string>RetinaScaler</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.astralbyte.retinascaler</string>
+            <key>CFBundleName</key>
+            <string>RetinaScaler</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${VERSION}</string>
+            <key>CFBundleVersion</key>
+            <string>${VERSION}</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>14.0</string>
+            <key>LSUIElement</key>
+            <true/>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
 
       - name: Ad-hoc code sign
         run: codesign --force --sign - --deep RetinaScaler.app
 
       - name: Create DMG
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${TAG_VERSION#v}"
           mkdir -p dmg_staging
           cp -R RetinaScaler.app dmg_staging/
           ln -s /Applications dmg_staging/Applications
           hdiutil create -volname "RetinaScaler" -srcfolder dmg_staging -ov -format UDZO "RetinaScaler-${VERSION}.dmg"
 
       - name: Create ZIP
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: zip -r "RetinaScaler-${VERSION}.zip" RetinaScaler.app
+
+      - name: Create tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          VERSION="${TAG_VERSION#v}"
-          zip -r "RetinaScaler-${VERSION}.zip" RetinaScaler.app
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: RetinaScaler ${{ steps.version.outputs.tag }}
+          body: ${{ inputs.release_notes || '' }}
+          generate_release_notes: ${{ inputs.release_notes == '' }}
           files: |
             RetinaScaler-*.dmg
             RetinaScaler-*.zip
