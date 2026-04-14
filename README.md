@@ -210,64 +210,10 @@ swift build -c release
 
 ---
 
-## Development
+## Development & Contributing
 
-### Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| Language | Swift 6.0 (Swift Package Manager) |
-| UI | SwiftUI (`MenuBarExtra` with `.window` style) |
-| Display Control | CoreGraphics, IOKit |
-| HiDPI Virtual | `CGVirtualDisplay` (private API) |
-| HDR | `CoreDisplay` (private API) |
-| Night Shift | `CoreBrightness` / `CBBlueLightClient` (private API) |
-| DDC/CI | `IOAVService` via IOKit (private API) |
-| CI/CD | GitHub Actions |
-
-### Git Flow
-
-This project uses **Git Flow**:
-
-```
-main              production releases, tagged with semver
-  |
-  +── hotfix/*    critical fixes from main → merge to main AND develop
-  |
-  +── release/*   release prep from develop → merge to main AND develop
-  |
-develop           active development, integration branch
-  |
-  +── feature/*   new features from develop → merge back to develop
-```
-
-| Branch | Purpose | Push access |
-|--------|---------|-------------|
-| `main` | Stable releases | PR only — nobody pushes directly |
-| `develop` | Active development | Owner direct push, contributors via PR |
-| `feature/*` | New features | Owner creates from develop |
-| `release/*` | Release candidates | Owner creates from develop |
-| `hotfix/*` | Production fixes | Owner creates from main |
-
-### Making a Release
-
-1. Create `release/x.y.z` branch from `develop`
-2. Apply final bugfixes on the release branch (no new features)
-3. Open PR `release/x.y.z` → `main` (merge commit `--no-ff`)
-4. After merge, go to **Actions > Release > Run workflow** — select major, minor, or patch
-5. Merge the release branch back to `develop` (`--no-ff`)
-
-### Hotfix
-
-1. Create `hotfix/description` from `main`
-2. Fix, commit, push
-3. PR to `main` (merge commit `--no-ff`)
-4. Trigger patch release via Actions
-5. Merge `main` back to `develop` (`--no-ff`)
-
-### Contributing
-
-See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for guidelines on submitting pull requests.
+- **[DEVELOPMENT.md](DEVELOPMENT.md)** — Architecture, tech stack, Git Flow, CI/CD, private APIs reference
+- **[CONTRIBUTING.md](.github/CONTRIBUTING.md)** — Guidelines for external contributors
 
 ---
 
