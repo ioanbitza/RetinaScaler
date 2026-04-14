@@ -19,6 +19,10 @@ on:
 jobs:
   release:
     runs-on: macos-15
+    if: github.ref == 'refs/heads/main'
+    concurrency:
+      group: release
+      cancel-in-progress: false
     permissions:
       contents: write
 
@@ -29,6 +33,8 @@ jobs:
 
       - name: Calculate next version
         id: version
+        env:
+          RELEASE_TYPE: ${{ inputs.release_type }}
         run: |
           LATEST=$(git tag -l 'v*' --sort=-v:refname | head -1)
           if [ -z "$LATEST" ]; then
@@ -39,7 +45,6 @@ jobs:
           MINOR=$(echo "$LATEST" | sed 's/v//' | cut -d. -f2)
           PATCH=$(echo "$LATEST" | sed 's/v//' | cut -d. -f3)
 
-          RELEASE_TYPE="${{ inputs.release_type }}"
           case "$RELEASE_TYPE" in
             major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
             minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
@@ -63,8 +68,34 @@ jobs:
           mkdir -p "$APP/Contents/Resources"
           cp .build/release/RetinaScaler "$APP/Contents/MacOS/RetinaScaler"
 
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
+          cat > "$APP/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDisplayName</key>
+            <string>RetinaScaler</string>
+            <key>CFBundleExecutable</key>
+            <string>RetinaScaler</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.astralbyte.retinascaler</string>
+            <key>CFBundleName</key>
+            <string>RetinaScaler</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${VERSION}</string>
+            <key>CFBundleVersion</key>
+            <string>${VERSION}</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>14.0</string>
+            <key>LSUIElement</key>
+            <true/>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
 
       - name: Ad-hoc code sign
         run: codesign --force --sign - --deep RetinaScaler.app
