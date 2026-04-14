@@ -172,6 +172,7 @@ enum VirtualDisplayManager {
             }
             mirroredPhysicalID = 0
         }
+        savedOrigin = nil  // Reset so next activation captures fresh position
         // NOTE: We intentionally do NOT release vdPointer.
         // The virtual display stays alive for instant reuse.
         // macOS cleans it up when the process exits.
@@ -263,18 +264,27 @@ enum VirtualDisplayManager {
         return applyMode(vDisplayID: vDisplayID, mode: targetMode, physicalDisplayID: physicalDisplayID)
     }
 
+    /// Saved position from before first VD activation, so we can restore it on mode switches
+    private static var savedOrigin: (x: Int32, y: Int32)?
+
     private static func applyMode(
         vDisplayID: CGDirectDisplayID, mode: CGDisplayMode,
         physicalDisplayID: CGDirectDisplayID
     ) -> Result<String, RetinaScalerError> {
-        // Position the VD centered above the primary display
-        let primary = CGMainDisplayID()
-        let primaryBounds = CGDisplayBounds(primary)
-        let primaryW = Int32(primaryBounds.width)
-        let displayW = Int32(mode.width)
-        let displayH = Int32(mode.height)
-        let posX = (primaryW - displayW) / 2
-        let posY = -displayH
+        // First time: save the current position of the physical display or VD
+        if savedOrigin == nil {
+            let bounds: CGRect
+            if CGDisplayIsOnline(vDisplayID) != 0 && CGDisplayBounds(vDisplayID) != .zero {
+                bounds = CGDisplayBounds(vDisplayID)
+            } else {
+                bounds = CGDisplayBounds(physicalDisplayID)
+            }
+            savedOrigin = (x: Int32(bounds.origin.x), y: Int32(bounds.origin.y))
+            logger.info("Saved display origin: (\(savedOrigin!.x), \(savedOrigin!.y))")
+        }
+
+        let posX = savedOrigin!.x
+        let posY = savedOrigin!.y
 
         var config: CGDisplayConfigRef?
         guard CGBeginDisplayConfiguration(&config) == .success else {
