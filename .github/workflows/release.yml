@@ -1,0 +1,57 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: write
+
+    env:
+      TAG_VERSION: ${{ github.ref_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build release binary
+        run: swift build -c release
+
+      - name: Prepare .app bundle
+        run: |
+          APP="RetinaScaler.app"
+          mkdir -p "$APP/Contents/MacOS"
+          mkdir -p "$APP/Contents/Resources"
+          cp .build/release/RetinaScaler "$APP/Contents/MacOS/RetinaScaler"
+          cp RetinaScaler.app/Contents/Info.plist "$APP/Contents/Info.plist" 2>/dev/null || true
+
+          VERSION="${TAG_VERSION#v}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
+
+      - name: Ad-hoc code sign
+        run: codesign --force --sign - --deep RetinaScaler.app
+
+      - name: Create DMG
+        run: |
+          VERSION="${TAG_VERSION#v}"
+          mkdir -p dmg_staging
+          cp -R RetinaScaler.app dmg_staging/
+          ln -s /Applications dmg_staging/Applications
+          hdiutil create -volname "RetinaScaler" -srcfolder dmg_staging -ov -format UDZO "RetinaScaler-${VERSION}.dmg"
+
+      - name: Create ZIP
+        run: |
+          VERSION="${TAG_VERSION#v}"
+          zip -r "RetinaScaler-${VERSION}.zip" RetinaScaler.app
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            RetinaScaler-*.dmg
+            RetinaScaler-*.zip
