@@ -341,19 +341,18 @@ struct DisplaySection: View {
 
     @ViewBuilder
     private var hiDPISection: some View {
-        // Native HiDPI modes from macOS API (full refresh rate)
-        let nativeHiDPI = deduplicate(displayModes
-            .filter { $0.isHiDPI && $0.width >= 1920 && $0.height >= 540 }
-            .sorted { $0.width > $1.width })
-
-        // Virtual display resolutions (higher than what native supports)
+        // Virtual display resolutions (always show these)
         let virtualResolutions = VirtualDisplayManager.scaledResolutions(
             nativeWidth: display.nativeWidth,
             nativeHeight: display.nativeHeight
-        ).filter { res in
-            // Only show virtual resolutions that DON'T exist as native modes
-            !nativeHiDPI.contains { $0.width == res.logical.0 && $0.height == res.logical.1 }
-        }
+        )
+        let virtualWidths = Set(virtualResolutions.map { $0.logical.0 })
+
+        // Native HiDPI modes — exclude any resolution that matches a virtual display resolution
+        // to prevent confusing overlap (clicking a "native" mode that's actually from VD fails)
+        let nativeHiDPI = deduplicate(displayModes
+            .filter { $0.isHiDPI && $0.width >= 1920 && $0.height >= 540 && !virtualWidths.contains($0.width) }
+            .sorted { $0.width > $1.width })
 
         // Disable HiDPI button when virtual display is active
         if manager.hiDPIActive {
