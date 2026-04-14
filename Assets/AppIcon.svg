@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f0c29"/>
+      <stop offset="50%" stop-color="#1a1440"/>
+      <stop offset="100%" stop-color="#0d1b2a"/>
+    </linearGradient>
+    <!-- Iris gradient -->
+    <radialGradient id="iris" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00f5d4"/>
+      <stop offset="40%" stop-color="#7b68ee"/>
+      <stop offset="75%" stop-color="#5b3cc4"/>
+      <stop offset="100%" stop-color="#2d1b69"/>
+    </radialGradient>
+    <!-- Pupil gradient -->
+    <radialGradient id="pupil" cx="45%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#050510"/>
+    </radialGradient>
+    <!-- Retina glow -->
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00f5d4" stop-opacity="0.6"/>
+      <stop offset="50%" stop-color="#7b68ee" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#7b68ee" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Pixel grid pattern -->
+    <pattern id="pixels" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
+      <rect width="16" height="16" fill="none"/>
+      <rect x="1" y="1" width="6" height="6" rx="1" fill="#00f5d4" opacity="0.15"/>
+      <rect x="9" y="1" width="6" height="6" rx="1" fill="#7b68ee" opacity="0.12"/>
+      <rect x="1" y="9" width="6" height="6" rx="1" fill="#9b59b6" opacity="0.1"/>
+      <rect x="9" y="9" width="6" height="6" rx="1" fill="#00f5d4" opacity="0.08"/>
+    </pattern>
+    <!-- Outer glow filter -->
+    <filter id="outerGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Soft shadow -->
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="12" flood-color="#7b68ee" flood-opacity="0.4"/>
+    </filter>
+    <!-- Sparkle filter -->
+    <filter id="sparkle">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2"/>
+    </filter>
+    <!-- Clip for iris pixel overlay -->
+    <clipPath id="irisClip">
+      <circle cx="256" cy="256" r="88"/>
+    </clipPath>
+  </defs>
+
+  <!-- Background rounded square (macOS icon shape) -->
+  <rect width="512" height="512" rx="110" fill="url(#bg)"/>
+
+  <!-- Subtle background grid -->
+  <rect width="512" height="512" rx="110" fill="url(#pixels)" opacity="0.3"/>
+
+  <!-- Ambient glow behind eye -->
+  <ellipse cx="256" cy="256" rx="160" ry="100" fill="url(#glow)" opacity="0.5"/>
+
+  <!-- Eye shape - upper lid -->
+  <path d="M76 256 C76 256, 136 146, 256 146 C376 146, 436 256, 436 256"
+        fill="none" stroke="url(#iris)" stroke-width="2.5" opacity="0.4"/>
+
+  <!-- Eye shape - lower lid -->
+  <path d="M76 256 C76 256, 136 366, 256 366 C376 366, 436 256, 436 256"
+        fill="none" stroke="url(#iris)" stroke-width="2.5" opacity="0.4"/>
+
+  <!-- Eye white (sclera) - filled almond shape -->
+  <path d="M76 256 C76 256, 136 146, 256 146 C376 146, 436 256, 436 256 C436 256, 376 366, 256 366 C136 366, 76 256, 76 256 Z"
+        fill="#0d0d1a" opacity="0.8"/>
+
+  <!-- Iris outer ring -->
+  <circle cx="256" cy="256" r="95" fill="none" stroke="#5b3cc4" stroke-width="3" opacity="0.5"/>
+
+  <!-- Iris -->
+  <circle cx="256" cy="256" r="88" fill="url(#iris)" filter="url(#shadow)"/>
+
+  <!-- Pixel grid overlay on iris -->
+  <circle cx="256" cy="256" r="88" fill="url(#pixels)" clip-path="url(#irisClip)" opacity="0.6"/>
+
+  <!-- Iris detail rings -->
+  <circle cx="256" cy="256" r="72" fill="none" stroke="#00f5d4" stroke-width="0.8" opacity="0.3"/>
+  <circle cx="256" cy="256" r="58" fill="none" stroke="#7b68ee" stroke-width="0.5" opacity="0.25"/>
+
+  <!-- Pupil -->
+  <circle cx="256" cy="256" r="34" fill="url(#pupil)"/>
+  <circle cx="256" cy="256" r="34" fill="none" stroke="#00f5d4" stroke-width="1" opacity="0.3"/>
+
+  <!-- Light reflection on pupil -->
+  <ellipse cx="244" cy="244" rx="10" ry="8" fill="white" opacity="0.7"/>
+  <ellipse cx="270" cy="262" rx="4" ry="3" fill="white" opacity="0.3"/>
+
+  <!-- Retina sparkles (HiDPI symbolism) -->
+  <g filter="url(#outerGlow)">
+    <!-- Top sparkle -->
+    <line x1="256" y1="125" x2="256" y2="137" stroke="#00f5d4" stroke-width="2" stroke-linecap="round"/>
+    <line x1="250" y1="131" x2="262" y2="131" stroke="#00f5d4" stroke-width="2" stroke-linecap="round"/>
+
+    <!-- Right sparkle -->
+    <line x1="380" y1="210" x2="392" y2="210" stroke="#7b68ee" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="386" y1="204" x2="386" y2="216" stroke="#7b68ee" stroke-width="1.5" stroke-linecap="round"/>
+
+    <!-- Bottom-left sparkle -->
+    <line x1="130" y1="310" x2="140" y2="310" stroke="#00f5d4" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="135" y1="305" x2="135" y2="315" stroke="#00f5d4" stroke-width="1.5" stroke-linecap="round"/>
+
+    <!-- Small dots -->
+    <circle cx="170" cy="180" r="2" fill="#00f5d4" opacity="0.7"/>
+    <circle cx="350" cy="320" r="1.5" fill="#7b68ee" opacity="0.6"/>
+    <circle cx="400" cy="280" r="1.5" fill="#00f5d4" opacity="0.5"/>
+    <circle cx="110" cy="240" r="1" fill="#9b59b6" opacity="0.5"/>
+  </g>
+
+  <!-- Outer eye highlight lines (lash hints) -->
+  <path d="M76 256 C76 256, 136 146, 256 146 C376 146, 436 256, 436 256"
+        fill="none" stroke="#00f5d4" stroke-width="2.5" stroke-linecap="round" opacity="0.6"/>
+  <path d="M76 256 C76 256, 136 366, 256 366 C376 366, 436 256, 436 256"
+        fill="none" stroke="#5b3cc4" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+
+  <!-- 2x badge (small, bottom-right) -->
+  <g transform="translate(358, 358)">
+    <rect x="0" y="0" width="56" height="28" rx="8" fill="#0f0c29" stroke="#00f5d4" stroke-width="1.5"/>
+    <text x="28" y="19" font-family="SF Pro Display, -apple-system, Helvetica Neue, sans-serif" font-size="16" font-weight="700" fill="#00f5d4" text-anchor="middle">2x</text>
+  </g>
+</svg>
