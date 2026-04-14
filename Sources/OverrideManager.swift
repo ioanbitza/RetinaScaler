@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import os.log
 
@@ -5,36 +6,8 @@ private let logger = Logger(subsystem: "com.astralbyte.retinascaler", category: 
 
 enum OverrideManager {
 
-    /// Default HiDPI resolutions for ultrawide 5120x1440 panels.
-    /// Includes fine-grained steps between 1080p and 1440p height for user preference.
-    static let defaultUltrawide5120x1440: [HiDPIResolution] = [
-        // Full range from native down to 1080p, maintaining 32:9 aspect ratio
-        HiDPIResolution(logicalWidth: 5120, logicalHeight: 1440, label: "Native HiDPI"),
-        HiDPIResolution(logicalWidth: 4836, logicalHeight: 1360, label: "Slightly Scaled"),
-        HiDPIResolution(logicalWidth: 4552, logicalHeight: 1280, label: "Comfortable"),
-        HiDPIResolution(logicalWidth: 4266, logicalHeight: 1200, label: "Medium"),
-        HiDPIResolution(logicalWidth: 3982, logicalHeight: 1120, label: "Compact"),
-        HiDPIResolution(logicalWidth: 3840, logicalHeight: 1080, label: "1080p HiDPI"),
-        // Below 1080p
-        HiDPIResolution(logicalWidth: 3360, logicalHeight: 946, label: "Large UI"),
-        HiDPIResolution(logicalWidth: 3200, logicalHeight: 900, label: "Larger UI"),
-        HiDPIResolution(logicalWidth: 3008, logicalHeight: 846, label: "Extra Large"),
-        HiDPIResolution(logicalWidth: 2560, logicalHeight: 720, label: "1:1 Retina"),
-    ]
-
-    /// Common presets for other panel resolutions
-    static let default4K3840x2160: [HiDPIResolution] = [
-        HiDPIResolution(logicalWidth: 3840, logicalHeight: 2160, label: "Native HiDPI"),
-        HiDPIResolution(logicalWidth: 3008, logicalHeight: 1692, label: "Default scaled"),
-        HiDPIResolution(logicalWidth: 2560, logicalHeight: 1440, label: "More space"),
-        HiDPIResolution(logicalWidth: 1920, logicalHeight: 1080, label: "1:1 Retina, biggest UI"),
-    ]
-
-    static let default1440p2560x1440: [HiDPIResolution] = [
-        HiDPIResolution(logicalWidth: 2560, logicalHeight: 1440, label: "Native HiDPI"),
-        HiDPIResolution(logicalWidth: 1920, logicalHeight: 1080, label: "Comfortable HiDPI"),
-        HiDPIResolution(logicalWidth: 1280, logicalHeight: 720, label: "1:1 Retina, biggest UI"),
-    ]
+    // No hardcoded presets — all resolutions are generated dynamically
+    // from the display's native resolution in suggestedResolutions(for:)
 
     // MARK: - Plist Generation
 
@@ -81,24 +54,27 @@ enum OverrideManager {
 
     // MARK: - Suggested Resolutions
 
+    /// Generates HiDPI override entries from the display's actual standard modes.
+    /// Every standard resolution the monitor supports gets an HiDPI entry in the plist.
+    /// Fully dynamic — works with any monitor.
     static func suggestedResolutions(for display: ExternalDisplay) -> [HiDPIResolution] {
-        let w = display.nativeWidth
-        let h = display.nativeHeight
+        let opts = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+        guard let modes = CGDisplayCopyAllDisplayModes(display.id, opts) as? [CGDisplayMode] else { return [] }
 
-        // Match known panel sizes
-        if w == 5120 && h == 1440 { return defaultUltrawide5120x1440 }
-        if w == 3840 && h == 2160 { return default4K3840x2160 }
-        if w == 2560 && h == 1440 { return default1440p2560x1440 }
-
-        // Generic: offer native HiDPI + a few scaled options
-        var resolutions = [HiDPIResolution(logicalWidth: w, logicalHeight: h, label: "Native HiDPI")]
-        let scales: [(Double, String)] = [(0.8, "Slightly larger UI"), (0.6, "Large UI"), (0.5, "1:1 Retina")]
-        for (scale, label) in scales {
-            let sw = Int(Double(w) * scale / 2) * 2  // keep even
-            let sh = Int(Double(h) * scale / 2) * 2
-            resolutions.append(HiDPIResolution(logicalWidth: sw, logicalHeight: sh, label: label))
+        let standard = modes.filter { mode in
+            mode.pixelWidth == mode.width && mode.width >= 800 && mode.height >= 400
         }
-        return resolutions
+        let sorted = standard.sorted { $0.width > $1.width }
+
+        var seen = Set<String>()
+        var result: [HiDPIResolution] = []
+        for mode in sorted {
+            let key = "\(mode.width)x\(mode.height)"
+            guard seen.insert(key).inserted else { continue }
+            let label: String = mode.width == display.nativeWidth ? "Native HiDPI" : "\(mode.width)×\(mode.height)"
+            result.append(HiDPIResolution(logicalWidth: mode.width, logicalHeight: mode.height, label: label))
+        }
+        return result
     }
 
     // MARK: - Install / Remove

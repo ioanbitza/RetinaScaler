@@ -27,25 +27,62 @@ enum VirtualDisplayManager {
         return vd.value(forKey: "displayID") as? UInt32 ?? 0
     }
 
-    // MARK: - Scaled HiDPI Resolutions
+    // MARK: - Virtual Display HiDPI Resolutions
 
+    /// Returns all standard (non-HiDPI) resolutions from the display that don't
+    /// already have a native HiDPI counterpart. These become VD HiDPI candidates.
+    /// Fully dynamic — works with any monitor, any aspect ratio.
+    static func scaledResolutions(for displayID: CGDirectDisplayID) -> [(logical: (Int, Int), backing: (Int, Int), label: String)] {
+        let opts = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+        guard let modes = CGDisplayCopyAllDisplayModes(displayID, opts) as? [CGDisplayMode] else { return [] }
+
+        // Collect native HiDPI widths (these already work without VD)
+        let nativeHiDPIWidths = Set(modes.filter { $0.pixelWidth > $0.width }.map { $0.width })
+
+        // Collect standard resolutions that DON'T have a native HiDPI version
+        // These are candidates for VD HiDPI
+        var seen = Set<String>()
+        let nativeW = CGDisplayPixelsWide(displayID)
+
+        return modes
+            .filter { mode in
+                // Standard mode (not HiDPI)
+                mode.pixelWidth == mode.width
+                // Reasonable size (at least 50% of native width)
+                && mode.width >= nativeW / 2
+                && mode.height >= 540
+                // No native HiDPI equivalent exists
+                && !nativeHiDPIWidths.contains(mode.width)
+            }
+            .sorted { $0.width > $1.width }
+            .compactMap { mode -> (logical: (Int, Int), backing: (Int, Int), label: String)? in
+                let key = "\(mode.width)x\(mode.height)"
+                guard seen.insert(key).inserted else { return nil }
+                let pct = Int(round(Double(mode.height) / Double(CGDisplayPixelsHigh(displayID)) * 100))
+                let label = mode.width == nativeW ? "Native HiDPI" : "\(pct)% scaled"
+                return (
+                    logical: (mode.width, mode.height),
+                    backing: (mode.width * 2, mode.height * 2),
+                    label: label
+                )
+            }
+    }
+
+    /// Backward-compatible wrapper using native dimensions
     static func scaledResolutions(nativeWidth: Int, nativeHeight: Int) -> [(logical: (Int, Int), backing: (Int, Int), label: String)] {
-        let aspect = Double(nativeWidth) / Double(nativeHeight)
+        // Find the display with matching native resolution
+        var displays = [CGDirectDisplayID](repeating: 0, count: 16)
+        var count: UInt32 = 0
+        CGGetOnlineDisplayList(16, &displays, &count)
 
-        let targets: [(height: Int, label: String)] = [
-            (1440, "Native HiDPI"),
-            (1360, "Slightly Scaled"),
-            (1280, "Comfortable"),
-            (1200, "Medium"),
-            (1120, "Compact"),
-            (1080, "Most Scaled"),
-        ]
-
-        return targets.map { target in
-            let logH = target.height
-            let logW = Int(round(Double(logH) * aspect / 2.0)) * 2
-            return (logical: (logW, logH), backing: (logW * 2, logH * 2), label: target.label)
+        for i in 0..<Int(count) {
+            let d = displays[i]
+            if CGDisplayPixelsWide(d) == nativeWidth && CGDisplayPixelsHigh(d) == nativeHeight
+                && CGDisplayIsBuiltin(d) == 0 {
+                return scaledResolutions(for: d)
+            }
         }
+        return []
     }
 
     // MARK: - Public API
@@ -80,17 +117,16 @@ enum VirtualDisplayManager {
 
         let maxHz = maxRefreshRate(for: physicalDisplayID)
         let refreshRates = Array(Set([60.0, 120.0, maxHz])).sorted()
-        let allScaled = scaledResolutions(nativeWidth: nativeWidth, nativeHeight: nativeHeight)
 
-        // Build modes for ALL resolutions
+        // Build VD modes: the target resolution + native, at all refresh rates
+        // Use the passed-in dimensions directly (not re-queried, which would
+        // return VD dimensions when mirror is active)
         var modeSpecs: [(UInt32, UInt32, Double)] = []
-        for res in allScaled {
-            for hz in refreshRates {
-                modeSpecs.append((UInt32(res.backing.0), UInt32(res.backing.1), hz))
-                modeSpecs.append((UInt32(res.logical.0), UInt32(res.logical.1), hz))
-            }
-        }
+        let backW = UInt32(targetLogW * 2)
+        let backH = UInt32(targetLogH * 2)
         for hz in refreshRates {
+            modeSpecs.append((backW, backH, hz))
+            modeSpecs.append((UInt32(targetLogW), UInt32(targetLogH), hz))
             modeSpecs.append((UInt32(nativeWidth * 2), UInt32(nativeHeight * 2), hz))
             modeSpecs.append((UInt32(nativeWidth), UInt32(nativeHeight), hz))
         }
@@ -111,8 +147,8 @@ enum VirtualDisplayManager {
         }
 
         // First time — create the virtual display
-        let maxBackW = UInt32(allScaled.map { $0.backing.0 }.max()! )
-        let maxBackH = UInt32(allScaled.map { $0.backing.1 }.max()!)
+        let maxBackW = UInt32(max(nativeWidth * 2, targetLogW * 2))
+        let maxBackH = UInt32(max(nativeHeight * 2, targetLogH * 2))
 
         let physWidth = CGDisplayScreenSize(physicalDisplayID).width
         let physHeight = CGDisplayScreenSize(physicalDisplayID).height
@@ -150,7 +186,8 @@ enum VirtualDisplayManager {
         vd.perform(NSSelectorFromString("applySettings:"), with: settings)
 
         // Install override plist for the virtual display
-        installVirtualOverride(nativeWidth: nativeWidth, nativeHeight: nativeHeight, scaledResolutions: allScaled)
+        let targetRes = [(logical: (targetLogW, targetLogH), backing: (targetLogW * 2, targetLogH * 2), label: "")]
+        installVirtualOverride(nativeWidth: nativeWidth, nativeHeight: nativeHeight, scaledResolutions: targetRes)
 
         usleep(500_000)
 
@@ -164,17 +201,17 @@ enum VirtualDisplayManager {
     static func disable() {
         logger.info("Disabling HiDPI mirroring")
 
-        if mirroredPhysicalID != 0 {
+        let physID = mirroredPhysicalID
+
+        if physID != 0 {
             var config: CGDisplayConfigRef?
             if CGBeginDisplayConfiguration(&config) == .success {
-                CGConfigureDisplayMirrorOfDisplay(config, mirroredPhysicalID, kCGNullDirectDisplay)
-                CGCompleteDisplayConfiguration(config, .forSession)
+                CGConfigureDisplayMirrorOfDisplay(config, physID, kCGNullDirectDisplay)
+                CGCompleteDisplayConfiguration(config, .permanently)
+                logger.info("Unmirror complete")
             }
             mirroredPhysicalID = 0
         }
-        // NOTE: We intentionally do NOT release vdPointer.
-        // The virtual display stays alive for instant reuse.
-        // macOS cleans it up when the process exits.
     }
 
     /// Force cleanup: unmirrors all displays mirrored to our virtual displays.
@@ -267,25 +304,14 @@ enum VirtualDisplayManager {
         vDisplayID: CGDirectDisplayID, mode: CGDisplayMode,
         physicalDisplayID: CGDirectDisplayID
     ) -> Result<String, RetinaScalerError> {
-        let physBounds = CGDisplayBounds(physicalDisplayID)
-        let wasMain = CGDisplayIsMain(physicalDisplayID) != 0
-            || CGDisplayIsMain(vDisplayID) != 0
-
         var config: CGDisplayConfigRef?
         guard CGBeginDisplayConfiguration(&config) == .success else {
             return .failure(.modeSwitchFailed)
         }
 
-        // Set mirror and mode on virtual display
         CGConfigureDisplayMirrorOfDisplay(config, physicalDisplayID, vDisplayID)
         CGConfigureDisplayWithDisplayMode(config, vDisplayID, mode, nil)
 
-        if wasMain {
-            CGConfigureDisplayOrigin(config, vDisplayID, Int32(physBounds.origin.x), Int32(physBounds.origin.y))
-        }
-
-        // Use .permanently for stable frame pacing — .forSession causes periodic revalidation
-        // that manifests as micro-stutters every few seconds
         guard CGCompleteDisplayConfiguration(config, .permanently) == .success else {
             return .failure(.modeSwitchFailed)
         }
@@ -293,7 +319,7 @@ enum VirtualDisplayManager {
         mirroredPhysicalID = physicalDisplayID
 
         let hz = Int(mode.refreshRate)
-        logger.info("HiDPI mode set: \(mode.width)x\(mode.height) @ \(hz)Hz (backing \(mode.pixelWidth)x\(mode.pixelHeight))")
+        logger.info("HiDPI mode set: \(mode.width)x\(mode.height) @ \(hz)Hz")
         return .success("\(mode.width)×\(mode.height) HiDPI @ \(hz)Hz active")
     }
 

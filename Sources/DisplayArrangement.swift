@@ -61,24 +61,37 @@ enum DisplayArrangement {
 
     /// Common arrangements relative to primary display.
     enum Preset: String, CaseIterable {
-        case leftOf = "Left of primary"
-        case rightOf = "Right of primary"
-        case above = "Above primary"
-        case below = "Below primary"
-        case centered = "Centered above"
+        case leftOf = "Left (centered)"
+        case rightOf = "Right (centered)"
+        case above = "Above (centered)"
+        case below = "Below (centered)"
     }
 
     static func applyPreset(_ preset: Preset, displayID: CGDirectDisplayID) -> Bool {
+        // If virtual display is active and this display is mirrored,
+        // move the virtual display (mirror master) instead
+        let targetID: CGDirectDisplayID
+        if VirtualDisplayManager.isActive {
+            let vdID = VirtualDisplayManager.virtualDisplayID
+            if vdID != 0 && CGDisplayMirrorsDisplay(displayID) == vdID {
+                targetID = vdID
+                logger.info("Virtual display active, moving VD \(vdID) instead of physical \(displayID)")
+            } else {
+                targetID = displayID
+            }
+        } else {
+            targetID = displayID
+        }
+
         let primary = CGMainDisplayID()
 
-        // Don't try to reposition the primary display relative to itself
-        guard displayID != primary else {
+        guard targetID != primary else {
             logger.info("Cannot reposition primary display relative to itself")
             return false
         }
 
         let primaryBounds = CGDisplayBounds(primary)
-        let displayMode = CGDisplayCopyDisplayMode(displayID)
+        let displayMode = CGDisplayCopyDisplayMode(targetID)
         let displayW = Int32(displayMode?.width ?? 1920)
         let displayH = Int32(displayMode?.height ?? 1080)
         let primaryW = Int32(primaryBounds.width)
@@ -93,10 +106,8 @@ enum DisplayArrangement {
             ((primaryW - displayW) / 2, -displayH)
         case .below:
             ((primaryW - displayW) / 2, primaryH)
-        case .centered:
-            ((primaryW - displayW) / 2, -displayH)
         }
 
-        return setPosition(displayID: displayID, x: x, y: y)
+        return setPosition(displayID: targetID, x: x, y: y)
     }
 }

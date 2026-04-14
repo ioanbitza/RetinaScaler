@@ -1,24 +1,73 @@
 import AppKit
 import SwiftUI
+import os.log
+
+private let appLogger = Logger(subsystem: "com.astralbyte.retinascaler", category: "App")
 
 @main
 struct RetinaScalerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    private let menuBarIcon: NSImage?
+
+    init() {
+        let icon = Self.loadMenuBarIcon()
+        menuBarIcon = icon
+        appLogger.warning("Menu bar icon loaded: \(icon != nil)")
+    }
 
     var body: some Scene {
-        MenuBarExtra("RetinaScaler", systemImage: "display.2") {
+        MenuBarExtra {
             MenuBarView()
+        } label: {
+            if let icon = menuBarIcon {
+                Image(nsImage: icon)
+                    .renderingMode(.template)
+            } else {
+                Image(systemName: "eye.fill")
+                    .font(.system(size: 14))
+            }
         }
         .menuBarExtraStyle(.window)
     }
+
+    private static func loadMenuBarIcon() -> NSImage? {
+        var dirs: [String] = []
+
+        if let exec = Bundle.main.executableURL {
+            dirs.append(exec.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Resources").path)
+            dirs.append(exec.deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent().appendingPathComponent("Assets").path)
+        }
+        if let rp = Bundle.main.resourcePath { dirs.append(rp) }
+        dirs.append(FileManager.default.currentDirectoryPath + "/Assets")
+
+        for dir in dirs {
+            let path = dir + "/MenuBarIcon@2x.png"
+            let exists = FileManager.default.fileExists(atPath: path)
+            appLogger.warning("Icon search: \(path) exists=\(exists)")
+            if let img = NSImage(contentsOfFile: path) {
+                // Menu bar icons should be 18pt tall, width proportional to aspect
+                let rep = img.representations.first
+                let pxW = CGFloat(rep?.pixelsWide ?? 36)
+                let pxH = CGFloat(rep?.pixelsHigh ?? 18)
+                let aspect = pxW / pxH
+                img.size = NSSize(width: 18 * aspect, height: 18)
+                img.isTemplate = true
+                return img
+            }
+        }
+        appLogger.error("Failed to load menu bar icon from any path")
+        return nil
+    }
 }
+
 
 /// Handles app lifecycle events to ensure virtual display cleanup on quit, crash, and signals.
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installSignalHandlers()
-        // Save PID so an external watchdog (or next launch) can detect stale state
         savePIDFile()
     }
 

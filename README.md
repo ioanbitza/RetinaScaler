@@ -14,7 +14,7 @@ Most external monitors have a pixel density below 210 PPI — the threshold Appl
 Works with any external monitor — ultrawides, 4K, 1440p, 1080p, any refresh rate.
 
 <p align="center">
-  <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.0.dmg"><strong>Download RetinaScaler.dmg</strong></a> · <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.0.zip">ZIP</a> · <a href="https://github.com/ioanbitza/RetinaScaler/releases">All Releases</a>
+  <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.2.dmg"><strong>Download RetinaScaler.dmg</strong></a> · <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.2.zip">ZIP</a> · <a href="https://github.com/ioanbitza/RetinaScaler/releases">All Releases</a>
 </p>
 
 ---

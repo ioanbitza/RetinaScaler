@@ -70,9 +70,19 @@ struct MenuBarView: View {
     private var settingsCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Settings header
-            DisclosureGroup {
+            TappableSection {
+                Label("Settings", systemImage: "gear")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+            } content: {
                 VStack(alignment: .leading, spacing: 0) {
                     SectionDivider()
+
+                    if manager.nightShiftAvailable {
+                        ToggleRow("Night Shift", icon: "moon.fill", isOn: manager.nightShiftEnabled) {
+                            manager.toggleNightShift()
+                        }
+                    }
 
                     ToggleRow("Launch at login", isOn: manager.launchAtLogin) {
                         manager.toggleLaunchAtLogin()
@@ -86,7 +96,6 @@ struct MenuBarView: View {
                         }
                     }
 
-                    // Keyboard shortcut hints
                     HStack(spacing: 8) {
                         shortcutHint("^⌥H", label: "HiDPI")
                         shortcutHint("^⌥R", label: "HDR")
@@ -96,10 +105,6 @@ struct MenuBarView: View {
                     .padding(.horizontal, MenuTheme.rowHorizontal)
                     .padding(.vertical, 6)
                 }
-            } label: {
-                Label("Settings", systemImage: "gear")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.primary)
             }
             .padding(.horizontal, MenuTheme.cardPadding)
             .padding(.vertical, 8)
@@ -197,6 +202,9 @@ struct DisplaySection: View {
     @State private var expanded = true
     @State private var displayModes: [DisplayModeInfo] = []
     @State private var displayCurrentMode: DisplayModeInfo?
+    /// Cached physical display modes — captured before VD activation, used for
+    /// HiDPI Native and VD lists so they don't change when VD is active
+    @State private var physicalModes: [DisplayModeInfo] = []
 
     private var displayIcon: String {
         display.isBuiltIn ? "laptopcomputer" : "display"
@@ -226,10 +234,27 @@ struct DisplaySection: View {
         .cardStyle()
         .onAppear { refreshDisplayModes() }
         .onChange(of: manager.hiDPIActive) { refreshDisplayModes() }
+        .onChange(of: manager.statusMessage) { refreshDisplayModes() }
+        .onChange(of: manager.isProcessing) { if !manager.isProcessing { refreshDisplayModes() } }
     }
 
     private func refreshDisplayModes() {
         displayModes = DisplayModeService.availableModes(for: display.id)
+
+        // Cache physical modes when VD is NOT active — these represent the
+        // real display capabilities, unaffected by VD mirror modes
+        if !VirtualDisplayManager.isActive || physicalModes.isEmpty {
+            physicalModes = displayModes
+        }
+
+        // When VD is active, read current mode from VD (mirror master)
+        if !display.isBuiltIn && VirtualDisplayManager.isActive {
+            let vdID = VirtualDisplayManager.virtualDisplayID
+            if vdID != 0 {
+                displayCurrentMode = DisplayModeService.currentMode(for: vdID)
+                return
+            }
+        }
         displayCurrentMode = DisplayModeService.currentMode(for: display.id)
     }
 
@@ -307,12 +332,6 @@ struct DisplaySection: View {
             }
         }
 
-        // Night Shift is system-wide — only show on first display to avoid confusion
-        if manager.nightShiftAvailable && display.id == manager.displays.first?.id {
-            ToggleRow("Night Shift (all displays)", icon: "moon.fill", isOn: manager.nightShiftEnabled) {
-                manager.toggleNightShift()
-            }
-        }
 
         // DDC Brightness (external only)
         if !display.isBuiltIn && manager.ddcAvailable {
@@ -330,19 +349,25 @@ struct DisplaySection: View {
 
     @ViewBuilder
     private var hiDPISection: some View {
-        // Native HiDPI modes from macOS API (full refresh rate)
-        let nativeHiDPI = deduplicate(displayModes
+        // Use physicalModes (cached before VD activation) for stable lists
+        let modesForLists = physicalModes.isEmpty ? displayModes : physicalModes
+
+        // Native HiDPI = modes where the physical display already supports HiDPI
+        let nativeHiDPI = deduplicate(modesForLists
             .filter { $0.isHiDPI && $0.width >= 1920 && $0.height >= 540 }
             .sorted { $0.width > $1.width })
 
-        // Virtual display resolutions (higher than what native supports)
-        let virtualResolutions = VirtualDisplayManager.scaledResolutions(
-            nativeWidth: display.nativeWidth,
-            nativeHeight: display.nativeHeight
-        ).filter { res in
-            // Only show virtual resolutions that DON'T exist as native modes
-            !nativeHiDPI.contains { $0.width == res.logical.0 && $0.height == res.logical.1 }
-        }
+        // Virtual Display = standard modes that DON'T have a native HiDPI counterpart
+        let nativeHiDPIWidths = Set(nativeHiDPI.map { $0.width })
+        let virtualResolutions = deduplicate(modesForLists
+            .filter { !$0.isHiDPI && $0.width >= display.nativeWidth / 2 && $0.height >= 540
+                && !nativeHiDPIWidths.contains($0.width) }
+            .sorted { $0.width > $1.width })
+            .map { mode -> (logical: (Int, Int), backing: (Int, Int), label: String) in
+                let pct = Int(round(Double(mode.height) / Double(display.nativeHeight) * 100))
+                let label = mode.width == display.nativeWidth ? "Native HiDPI" : "\(pct)% scaled"
+                return (logical: (mode.width, mode.height), backing: (mode.width * 2, mode.height * 2), label: label)
+            }
 
         // Disable HiDPI button when virtual display is active
         if manager.hiDPIActive {
@@ -354,13 +379,7 @@ struct DisplaySection: View {
 
         // Native HiDPI section
         if !nativeHiDPI.isEmpty {
-            DisclosureGroup {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(nativeHiDPI) { mode in
-                        hiDPIRow(mode, isVirtual: false)
-                    }
-                }
-            } label: {
+            TappableSection {
                 HStack(spacing: 6) {
                     Label("HiDPI Native", systemImage: "sparkles")
                         .font(.system(size: 12, weight: .medium))
@@ -371,6 +390,12 @@ struct DisplaySection: View {
                         .padding(.vertical, 2)
                         .background(Color.cyan.opacity(0.12), in: Capsule())
                 }
+            } content: {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(nativeHiDPI) { mode in
+                        hiDPIRow(mode, isVirtual: false)
+                    }
+                }
             }
             .padding(.horizontal, MenuTheme.rowHorizontal)
             .padding(.vertical, MenuTheme.rowVertical)
@@ -380,13 +405,7 @@ struct DisplaySection: View {
         if !virtualResolutions.isEmpty {
             SectionDivider()
 
-            DisclosureGroup {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(virtualResolutions.enumerated()), id: \.offset) { _, res in
-                        virtualHiDPIRow(logW: res.logical.0, logH: res.logical.1, label: res.label)
-                    }
-                }
-            } label: {
+            TappableSection {
                 HStack(spacing: 6) {
                     Label("HiDPI Virtual Display", systemImage: "display.and.arrow.down")
                         .font(.system(size: 12, weight: .medium))
@@ -397,6 +416,12 @@ struct DisplaySection: View {
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
                             .background(.green.opacity(0.15), in: Capsule())
+                    }
+                }
+            } content: {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(virtualResolutions.enumerated()), id: \.offset) { _, res in
+                        virtualHiDPIRow(logW: res.logical.0, logH: res.logical.1, label: res.label)
                     }
                 }
             }
@@ -414,11 +439,18 @@ struct DisplaySection: View {
     }
 
     private func hiDPIRow(_ mode: DisplayModeInfo, isVirtual: Bool) -> some View {
-        let isCurrent = displayCurrentMode?.width == mode.width
+        // Native HiDPI rows should only show checkmark when VD is NOT active
+        // Virtual HiDPI rows should only show checkmark when VD IS active
+        let resolutionMatches = displayCurrentMode?.width == mode.width
             && displayCurrentMode?.height == mode.height
             && displayCurrentMode?.isHiDPI == mode.isHiDPI
+        let isCurrent = resolutionMatches && !manager.hiDPIActive
 
         return Button {
+            // Disable VD first if active — user chose a native mode
+            if manager.hiDPIActive {
+                manager.disableHiDPI()
+            }
             manager.switchMode(to: mode, for: display)
             refreshDisplayModes()
         } label: {
@@ -502,7 +534,10 @@ struct DisplaySection: View {
     // MARK: - Per-Display Tools
 
     private var displayToolsSection: some View {
-        DisclosureGroup {
+        TappableSection {
+            Label("Tools", systemImage: "wrench.and.screwdriver")
+                .font(.system(size: 12, weight: .medium))
+        } content: {
             VStack(alignment: .leading, spacing: 0) {
                 if !display.isBuiltIn {
                     MenuRow("Arrangement") {
@@ -526,9 +561,6 @@ struct DisplaySection: View {
                     }
                 }
             }
-        } label: {
-            Label("Tools", systemImage: "wrench.and.screwdriver")
-                .font(.system(size: 12, weight: .medium))
         }
         .padding(.horizontal, MenuTheme.cardPadding)
         .padding(.vertical, 6)
@@ -545,15 +577,20 @@ struct DisplaySection: View {
         // On built-in displays, show both since there's no virtual display involved.
         let showHiDPI = display.isBuiltIn
 
-        let hiDPIModes = showHiDPI ? deduplicate(displayModes
+        let modesForList = physicalModes.isEmpty ? displayModes : physicalModes
+
+        let hiDPIModes = showHiDPI ? deduplicate(modesForList
             .filter { $0.isHiDPI && $0.width >= minWidth }
             .sorted { $0.width > $1.width }) : []
 
-        let stdModes = deduplicate(displayModes
+        let stdModes = deduplicate(modesForList
             .filter { !$0.isHiDPI && $0.width >= minWidth && $0.height >= minHeight }
             .sorted { $0.width > $1.width })
 
-        return DisclosureGroup {
+        return TappableSection {
+            Label("Resolutions", systemImage: "rectangle.split.3x1")
+                .font(.system(size: 12, weight: .medium))
+        } content: {
             VStack(alignment: .leading, spacing: 2) {
                 if !hiDPIModes.isEmpty {
                     resolutionGroupHeader("HiDPI", color: MenuTheme.accentHiDPI, icon: "sparkles")
@@ -573,9 +610,6 @@ struct DisplaySection: View {
                 }
             }
             .padding(.vertical, 4)
-        } label: {
-            Label("Resolutions", systemImage: "rectangle.split.3x1")
-                .font(.system(size: 12, weight: .medium))
         }
         .padding(.horizontal, MenuTheme.cardPadding)
         .padding(.vertical, 6)
@@ -601,6 +635,9 @@ struct DisplaySection: View {
             && displayCurrentMode?.isHiDPI == mode.isHiDPI
 
         return Button {
+            if manager.hiDPIActive {
+                manager.disableHiDPI()
+            }
             manager.switchMode(to: mode, for: display)
             refreshDisplayModes()
         } label: {
@@ -1031,5 +1068,44 @@ struct SliderRow: View {
         }
         .padding(.horizontal, MenuTheme.rowHorizontal)
         .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Tappable Disclosure Group
+
+/// A DisclosureGroup where tapping anywhere on the header toggles expansion,
+/// not just the tiny chevron.
+struct TappableSection<Label: View, Content: View>: View {
+    @State private var isExpanded: Bool
+    let label: Label
+    let content: () -> Content
+
+    init(expanded: Bool = false, @ViewBuilder label: () -> Label, @ViewBuilder content: @escaping () -> Content) {
+        _isExpanded = State(initialValue: expanded)
+        self.label = label()
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+            } label: {
+                HStack {
+                    label
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                content()
+            }
+        }
     }
 }

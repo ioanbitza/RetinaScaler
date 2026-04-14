@@ -223,7 +223,10 @@ class DisplayManager {
         VirtualDisplayManager.disable()
         hiDPIActive = false
         statusMessage = "HiDPI disabled"
-        refresh()
+        // Delay refresh to let macOS settle display configuration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.refresh()
+        }
     }
 
     func toggleHiDPI() {

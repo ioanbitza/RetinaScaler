@@ -8,6 +8,8 @@
 <meta property="og:title" content="RetinaScaler">
 <meta property="og:description" content="Retina-quality text on every external monitor. Free and open-source for macOS.">
 <meta property="og:type" content="website">
+<meta property="og:image" content="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -110,31 +112,13 @@ nav .container {
   pointer-events: none;
 }
 /* Animated eye decoration */
-.hero-eye {
-  width: 120px; height: 60px;
+.hero-icon {
+  width: 120px; height: 120px;
   margin: 0 auto 40px;
-  position: relative;
+  border-radius: 24px;
+  animation: iconFloat 3s ease-in-out infinite;
 }
-.hero-eye::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 2px solid var(--accent2);
-  border-radius: 50% / 100%;
-  opacity: 0.5;
-  animation: eyePulse 3s ease-in-out infinite;
-}
-.hero-eye::after {
-  content: '';
-  position: absolute;
-  top: 50%; left: 50%; transform: translate(-50%,-50%);
-  width: 28px; height: 28px;
-  background: radial-gradient(circle, var(--accent) 0%, var(--accent2) 60%, transparent 100%);
-  border-radius: 50%;
-  animation: irisPulse 3s ease-in-out infinite;
-}
-@keyframes eyePulse { 0%,100%{opacity:0.3;transform:scaleX(1)} 50%{opacity:0.6;transform:scaleX(1.05)} }
-@keyframes irisPulse { 0%,100%{transform:translate(-50%,-50%) scale(1)} 50%{transform:translate(-50%,-50%) scale(1.15)} }
+@keyframes iconFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
 
 .hero h1 {
   font-family: var(--serif);
@@ -469,7 +453,7 @@ footer a { color: var(--text-dim); }
       <a href="#features">Features</a>
       <a href="#download">Download</a>
       <a href="https://github.com/ioanbitza/RetinaScaler" target="_blank">GitHub</a>
-      <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.0.dmg" class="nav-cta">Download .dmg</a>
+      <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.2.dmg" class="nav-cta">Download .dmg</a>
     </div>
   </div>
 </nav>
@@ -477,11 +461,11 @@ footer a { color: var(--text-dim); }
 <!-- HERO -->
 <section class="hero">
   <div class="container">
-    <div class="hero-eye"></div>
+    <img src="icon.png" alt="RetinaScaler" class="hero-icon">
     <h1>Retina-quality text<br>on <em>every</em> monitor</h1>
     <p class="hero-sub">Free, open-source macOS utility that unlocks HiDPI scaling on external monitors where Apple won't. Sharp text, smooth UI, zero compromise.</p>
     <div class="hero-actions">
-      <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.0.dmg" class="btn btn-primary">Download for macOS</a>
+      <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.2.dmg" class="btn btn-primary">Download for macOS</a>
       <a href="https://github.com/ioanbitza/RetinaScaler" target="_blank" class="btn btn-ghost">View on GitHub</a>
     </div>
     <div class="hero-meta">
@@ -615,12 +599,12 @@ footer a { color: var(--text-dim); }
     <p class="section-label">Download</p>
     <h2 class="section-title">Ready to try?</h2>
     <div class="download-box fade-in">
-      <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.0.dmg" class="btn btn-primary">Download RetinaScaler.dmg</a>
+      <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.2.dmg" class="btn btn-primary">Download RetinaScaler.dmg</a>
       <div class="download-reqs">
         macOS 14.0 (Sonoma) or later<br>
         Apple Silicon or Intel Mac<br>
         External monitor via DisplayPort, HDMI, or USB-C<br><br>
-        <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.0.zip">Download ZIP</a> &middot; <a href="https://github.com/ioanbitza/RetinaScaler/releases">All Releases</a>
+        <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.2.zip">Download ZIP</a> &middot; <a href="https://github.com/ioanbitza/RetinaScaler/releases">All Releases</a>
       </div>
       <details class="gatekeeper">
         <summary>macOS blocks the app on first launch?</summary>
@@ -638,8 +622,8 @@ footer a { color: var(--text-dim); }
     <p class="donate-desc">RetinaScaler is free and open-source. If it improved your display experience, consider supporting development.</p>
     <div class="donate-buttons fade-in">
       <a href="https://github.com/sponsors/ioanbitza" target="_blank" class="donate-btn">&#10084;&#65039; GitHub Sponsors</a>
-      <a href="https://buymeacoffee.com/ioanbitza" target="_blank" class="donate-btn">&#9749; Buy Me a Coffee</a>
-      <a href="https://ko-fi.com/ioanbitza" target="_blank" class="donate-btn">&#127861; Ko-fi</a>
+      <a href="https://buymeacoffee.com/ioanbita" target="_blank" class="donate-btn">&#9749; Buy Me a Coffee</a>
+      <a href="https://ko-fi.com/ioanbita" target="_blank" class="donate-btn">&#127861; Ko-fi</a>
     </div>
   </div>
 </section>
