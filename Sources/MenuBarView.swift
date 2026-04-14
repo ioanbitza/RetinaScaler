@@ -231,10 +231,22 @@ struct DisplaySection: View {
         .cardStyle()
         .onAppear { refreshDisplayModes() }
         .onChange(of: manager.hiDPIActive) { refreshDisplayModes() }
+        .onChange(of: manager.statusMessage) { refreshDisplayModes() }
+        .onChange(of: manager.isProcessing) { if !manager.isProcessing { refreshDisplayModes() } }
     }
 
     private func refreshDisplayModes() {
         displayModes = DisplayModeService.availableModes(for: display.id)
+
+        // When Virtual Display is active and this display is mirrored,
+        // read current mode from the VD (mirror master) instead of the physical (mirror slave)
+        if !display.isBuiltIn && VirtualDisplayManager.isActive {
+            let vdID = VirtualDisplayManager.virtualDisplayID
+            if vdID != 0 {
+                displayCurrentMode = DisplayModeService.currentMode(for: vdID)
+                return
+            }
+        }
         displayCurrentMode = DisplayModeService.currentMode(for: display.id)
     }
 
