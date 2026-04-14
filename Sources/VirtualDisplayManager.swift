@@ -208,7 +208,7 @@ enum VirtualDisplayManager {
             if CGBeginDisplayConfiguration(&config) == .success {
                 CGConfigureDisplayMirrorOfDisplay(config, physID, kCGNullDirectDisplay)
                 CGCompleteDisplayConfiguration(config, .permanently)
-                logger.info("Unmirror + reposition to (\(pos.x), \(pos.y))")
+                logger.info("Unmirror complete")
             }
             mirroredPhysicalID = 0
         }
@@ -300,15 +300,6 @@ enum VirtualDisplayManager {
         return applyMode(vDisplayID: vDisplayID, mode: targetMode, physicalDisplayID: physicalDisplayID)
     }
 
-    private static func aboveCentered(displayW: Int32, displayH: Int32) -> (x: Int32, y: Int32) {
-        let primary = CGMainDisplayID()
-        let primaryBounds = CGDisplayBounds(primary)
-        let primaryW = Int32(primaryBounds.width)
-        let x = (primaryW - displayW) / 2
-        let y = -displayH
-        return (x, y)
-    }
-
     private static func applyMode(
         vDisplayID: CGDirectDisplayID, mode: CGDisplayMode,
         physicalDisplayID: CGDirectDisplayID
@@ -328,7 +319,7 @@ enum VirtualDisplayManager {
         mirroredPhysicalID = physicalDisplayID
 
         let hz = Int(mode.refreshRate)
-        logger.info("HiDPI mode set: \(mode.width)x\(mode.height) @ \(hz)Hz at position (\(pos.x),\(pos.y))")
+        logger.info("HiDPI mode set: \(mode.width)x\(mode.height) @ \(hz)Hz")
         return .success("\(mode.width)×\(mode.height) HiDPI @ \(hz)Hz active")
     }
 
