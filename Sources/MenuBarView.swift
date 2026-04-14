@@ -74,6 +74,12 @@ struct MenuBarView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     SectionDivider()
 
+                    if manager.nightShiftAvailable {
+                        ToggleRow("Night Shift", icon: "moon.fill", isOn: manager.nightShiftEnabled) {
+                            manager.toggleNightShift()
+                        }
+                    }
+
                     ToggleRow("Launch at login", isOn: manager.launchAtLogin) {
                         manager.toggleLaunchAtLogin()
                     }
@@ -307,12 +313,6 @@ struct DisplaySection: View {
             }
         }
 
-        // Night Shift is system-wide — only show on first display to avoid confusion
-        if manager.nightShiftAvailable && display.id == manager.displays.first?.id {
-            ToggleRow("Night Shift (all displays)", icon: "moon.fill", isOn: manager.nightShiftEnabled) {
-                manager.toggleNightShift()
-            }
-        }
 
         // DDC Brightness (external only)
         if !display.isBuiltIn && manager.ddcAvailable {
