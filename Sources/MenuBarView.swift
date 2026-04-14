@@ -432,6 +432,10 @@ struct DisplaySection: View {
         let isCurrent = resolutionMatches && !manager.hiDPIActive
 
         return Button {
+            // Disable VD first if active — user chose a native mode
+            if manager.hiDPIActive {
+                manager.disableHiDPI()
+            }
             manager.switchMode(to: mode, for: display)
             refreshDisplayModes()
         } label: {
@@ -614,6 +618,9 @@ struct DisplaySection: View {
             && displayCurrentMode?.isHiDPI == mode.isHiDPI
 
         return Button {
+            if manager.hiDPIActive {
+                manager.disableHiDPI()
+            }
             manager.switchMode(to: mode, for: display)
             refreshDisplayModes()
         } label: {
