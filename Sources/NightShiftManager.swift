@@ -48,8 +48,8 @@ enum NightShiftManager {
         let ok = fn(client, sel, &statusBuf)
         guard ok else { return nil }
 
-        // Byte 0: enabled (0 or 1)
-        let enabled = statusBuf[0] != 0
+        // Byte 0: supported, Byte 1: enabled
+        let enabled = statusBuf[1] != 0
 
         // Strength via separate call
         var strength: Float = 0.5
