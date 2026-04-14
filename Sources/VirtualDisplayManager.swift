@@ -164,18 +164,42 @@ enum VirtualDisplayManager {
     static func disable() {
         logger.info("Disabling HiDPI mirroring")
 
-        if mirroredPhysicalID != 0 {
+        let physID = mirroredPhysicalID
+
+        if physID != 0 {
+            // Unmirror AND reposition physical display in one transaction
+            // Without repositioning, the physical display stays at the VD's coordinates
+            // which can leave the cursor trapped in a tiny area
+            let primary = CGMainDisplayID()
+            let primaryBounds = CGDisplayBounds(primary)
+
             var config: CGDisplayConfigRef?
             if CGBeginDisplayConfiguration(&config) == .success {
-                CGConfigureDisplayMirrorOfDisplay(config, mirroredPhysicalID, kCGNullDirectDisplay)
-                CGCompleteDisplayConfiguration(config, .forSession)
+                // Remove mirror
+                CGConfigureDisplayMirrorOfDisplay(config, physID, kCGNullDirectDisplay)
+
+                // Reposition physical display: use saved origin if available,
+                // otherwise center above primary
+                if let origin = savedOrigin {
+                    CGConfigureDisplayOrigin(config, physID, origin.x, origin.y)
+                    logger.info("Restored display to saved position (\(origin.x), \(origin.y))")
+                } else {
+                    // Fallback: center above primary
+                    let physMode = CGDisplayCopyDisplayMode(physID)
+                    let displayW = Int32(physMode?.width ?? 1920)
+                    let displayH = Int32(physMode?.height ?? 1080)
+                    let primaryW = Int32(primaryBounds.width)
+                    let x = (primaryW - displayW) / 2
+                    let y = -displayH
+                    CGConfigureDisplayOrigin(config, physID, x, y)
+                    logger.info("Repositioned display to centered above (\(x), \(y))")
+                }
+
+                CGCompleteDisplayConfiguration(config, .permanently)
             }
             mirroredPhysicalID = 0
         }
-        savedOrigin = nil  // Reset so next activation captures fresh position
-        // NOTE: We intentionally do NOT release vdPointer.
-        // The virtual display stays alive for instant reuse.
-        // macOS cleans it up when the process exits.
+        savedOrigin = nil
     }
 
     /// Force cleanup: unmirrors all displays mirrored to our virtual displays.
