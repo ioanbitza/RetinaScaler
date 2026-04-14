@@ -27,28 +27,62 @@ enum VirtualDisplayManager {
         return vd.value(forKey: "displayID") as? UInt32 ?? 0
     }
 
-    // MARK: - Scaled HiDPI Resolutions
+    // MARK: - Virtual Display HiDPI Resolutions
 
+    /// Returns all standard (non-HiDPI) resolutions from the display that don't
+    /// already have a native HiDPI counterpart. These become VD HiDPI candidates.
+    /// Fully dynamic — works with any monitor, any aspect ratio.
+    static func scaledResolutions(for displayID: CGDirectDisplayID) -> [(logical: (Int, Int), backing: (Int, Int), label: String)] {
+        let opts = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+        guard let modes = CGDisplayCopyAllDisplayModes(displayID, opts) as? [CGDisplayMode] else { return [] }
+
+        // Collect native HiDPI widths (these already work without VD)
+        let nativeHiDPIWidths = Set(modes.filter { $0.pixelWidth > $0.width }.map { $0.width })
+
+        // Collect standard resolutions that DON'T have a native HiDPI version
+        // These are candidates for VD HiDPI
+        var seen = Set<String>()
+        let nativeW = CGDisplayPixelsWide(displayID)
+
+        return modes
+            .filter { mode in
+                // Standard mode (not HiDPI)
+                mode.pixelWidth == mode.width
+                // Reasonable size (at least 50% of native width)
+                && mode.width >= nativeW / 2
+                && mode.height >= 540
+                // No native HiDPI equivalent exists
+                && !nativeHiDPIWidths.contains(mode.width)
+            }
+            .sorted { $0.width > $1.width }
+            .compactMap { mode -> (logical: (Int, Int), backing: (Int, Int), label: String)? in
+                let key = "\(mode.width)x\(mode.height)"
+                guard seen.insert(key).inserted else { return nil }
+                let pct = Int(round(Double(mode.height) / Double(CGDisplayPixelsHigh(displayID)) * 100))
+                let label = mode.width == nativeW ? "Native HiDPI" : "\(pct)% scaled"
+                return (
+                    logical: (mode.width, mode.height),
+                    backing: (mode.width * 2, mode.height * 2),
+                    label: label
+                )
+            }
+    }
+
+    /// Backward-compatible wrapper using native dimensions
     static func scaledResolutions(nativeWidth: Int, nativeHeight: Int) -> [(logical: (Int, Int), backing: (Int, Int), label: String)] {
-        let aspect = Double(nativeWidth) / Double(nativeHeight)
+        // Find the display with matching native resolution
+        var displays = [CGDirectDisplayID](repeating: 0, count: 16)
+        var count: UInt32 = 0
+        CGGetOnlineDisplayList(16, &displays, &count)
 
-        // Generate scaled resolutions as percentages of native height
-        // From 100% (native HiDPI) down to 75%, maintaining aspect ratio
-        let scales: [(pct: Double, label: String)] = [
-            (1.00, "Native HiDPI"),
-            (0.945, "Slightly Scaled"),
-            (0.89, "Comfortable"),
-            (0.835, "Medium"),
-            (0.78, "Compact"),
-            (0.75, "Most Scaled"),
-        ]
-
-        return scales.map { scale in
-            // Round to nearest 2 for pixel alignment
-            let logH = Int(round(Double(nativeHeight) * scale.pct / 2.0)) * 2
-            let logW = Int(round(Double(logH) * aspect / 2.0)) * 2
-            return (logical: (logW, logH), backing: (logW * 2, logH * 2), label: scale.label)
+        for i in 0..<Int(count) {
+            let d = displays[i]
+            if CGDisplayPixelsWide(d) == nativeWidth && CGDisplayPixelsHigh(d) == nativeHeight
+                && CGDisplayIsBuiltin(d) == 0 {
+                return scaledResolutions(for: d)
+            }
         }
+        return []
     }
 
     // MARK: - Public API

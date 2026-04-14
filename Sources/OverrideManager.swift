@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import os.log
 
@@ -53,30 +54,27 @@ enum OverrideManager {
 
     // MARK: - Suggested Resolutions
 
-    /// Generates HiDPI resolutions dynamically from the display's native resolution.
-    /// Works with any monitor — ultrawides, 4K, 1440p, 1080p, any aspect ratio.
+    /// Generates HiDPI override entries from the display's actual standard modes.
+    /// Every standard resolution the monitor supports gets an HiDPI entry in the plist.
+    /// Fully dynamic — works with any monitor.
     static func suggestedResolutions(for display: ExternalDisplay) -> [HiDPIResolution] {
-        let w = display.nativeWidth
-        let h = display.nativeHeight
-        let aspect = Double(w) / Double(h)
+        let opts = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+        guard let modes = CGDisplayCopyAllDisplayModes(display.id, opts) as? [CGDisplayMode] else { return [] }
 
-        // Generate a range of scaled resolutions from 100% down to 50% of native
-        let scales: [(pct: Double, label: String)] = [
-            (1.00, "Native HiDPI"),
-            (0.945, "Slightly Scaled"),
-            (0.89, "Comfortable"),
-            (0.835, "Medium"),
-            (0.78, "Compact"),
-            (0.75, "Most Scaled"),
-            (0.66, "Large UI"),
-            (0.50, "1:1 Retina"),
-        ]
-
-        return scales.map { scale in
-            let logH = Int(round(Double(h) * scale.pct / 2.0)) * 2
-            let logW = Int(round(Double(logH) * aspect / 2.0)) * 2
-            return HiDPIResolution(logicalWidth: logW, logicalHeight: logH, label: scale.label)
+        let standard = modes.filter { mode in
+            mode.pixelWidth == mode.width && mode.width >= 800 && mode.height >= 400
         }
+        let sorted = standard.sorted { $0.width > $1.width }
+
+        var seen = Set<String>()
+        var result: [HiDPIResolution] = []
+        for mode in sorted {
+            let key = "\(mode.width)x\(mode.height)"
+            guard seen.insert(key).inserted else { continue }
+            let label: String = mode.width == display.nativeWidth ? "Native HiDPI" : "\(mode.width)×\(mode.height)"
+            result.append(HiDPIResolution(logicalWidth: mode.width, logicalHeight: mode.height, label: label))
+        }
+        return result
     }
 
     // MARK: - Install / Remove
