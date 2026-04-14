@@ -1,14 +1,23 @@
 import CoreGraphics
 import Foundation
 import IOKit
+import os.log
+
+private let logger = Logger(subsystem: "com.astralbyte.retinascaler", category: "DisplayDetector")
 
 enum DisplayDetector {
+
+    /// The vendor ID and product ID used by our virtual display. Used to filter it from detection results.
+    static let virtualVendorID: UInt32 = 0x4C2D
+    static let virtualProductID: UInt32 = 0xFFFE
 
     static func detectDisplays() -> [ExternalDisplay] {
         var onlineDisplays = [CGDirectDisplayID](repeating: 0, count: 16)
         var displayCount: UInt32 = 0
 
-        guard CGGetOnlineDisplayList(16, &onlineDisplays, &displayCount) == .success else {
+        let result = CGGetOnlineDisplayList(16, &onlineDisplays, &displayCount)
+        guard result == .success else {
+            logger.warning("CGGetOnlineDisplayList failed with code \(result.rawValue)")
             return []
         }
 
@@ -20,8 +29,8 @@ enum DisplayDetector {
             let productID = CGDisplayModelNumber(displayID)
             let isBuiltIn = CGDisplayIsBuiltin(displayID) != 0
 
-            // Filter out our virtual display (productID 0xFFFE)
-            if vendorID == 0x4C2D && productID == 0xFFFE { return nil }
+            // Filter out our virtual display
+            if vendorID == virtualVendorID && productID == virtualProductID { return nil }
 
             let width = CGDisplayPixelsWide(displayID)
             let height = CGDisplayPixelsHigh(displayID)
@@ -29,7 +38,7 @@ enum DisplayDetector {
             let key = DisplayKey(vendorID: vendorID, productID: productID)
             let name = edidNames[key]
                 ?? displayNameFromIOKit(displayID: displayID)
-                ?? (isBuiltIn ? "Built-in Display" : "Samsung G9 Neo")
+                ?? (isBuiltIn ? "Built-in Display" : "External Display")
 
             return ExternalDisplay(
                 id: displayID,
@@ -111,8 +120,10 @@ enum DisplayDetector {
             }
         }
 
-        // Last resort: known Samsung vendor
+        // Last resort: known vendor IDs
         if vendorID == 0x4C2D { return "Samsung Monitor" }
+        if vendorID == 0x1E6D { return "LG Monitor" }
+        if vendorID == 0x10AC { return "Dell Monitor" }
         return nil
     }
 }

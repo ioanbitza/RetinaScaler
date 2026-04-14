@@ -1,15 +1,25 @@
 import Foundation
+import os.log
+
+private let logger = Logger(subsystem: "com.astralbyte.retinascaler", category: "OverrideManager")
 
 enum OverrideManager {
 
-    /// Default HiDPI resolutions for ultrawide 5120×1440 panels.
-    /// Add more presets here for other common panel sizes.
+    /// Default HiDPI resolutions for ultrawide 5120x1440 panels.
+    /// Includes fine-grained steps between 1080p and 1440p height for user preference.
     static let defaultUltrawide5120x1440: [HiDPIResolution] = [
-        HiDPIResolution(logicalWidth: 5120, logicalHeight: 1440, label: "Native HiDPI — full space, Retina quality"),
-        HiDPIResolution(logicalWidth: 4096, logicalHeight: 1152, label: "Slightly larger UI"),
-        HiDPIResolution(logicalWidth: 3840, logicalHeight: 1080, label: "Comfortable scaling"),
-        HiDPIResolution(logicalWidth: 3200, logicalHeight: 900, label: "Large UI elements"),
-        HiDPIResolution(logicalWidth: 2560, logicalHeight: 720, label: "1:1 pixel-perfect, biggest UI"),
+        // Full range from native down to 1080p, maintaining 32:9 aspect ratio
+        HiDPIResolution(logicalWidth: 5120, logicalHeight: 1440, label: "Native HiDPI"),
+        HiDPIResolution(logicalWidth: 4836, logicalHeight: 1360, label: "Slightly Scaled"),
+        HiDPIResolution(logicalWidth: 4552, logicalHeight: 1280, label: "Comfortable"),
+        HiDPIResolution(logicalWidth: 4266, logicalHeight: 1200, label: "Medium"),
+        HiDPIResolution(logicalWidth: 3982, logicalHeight: 1120, label: "Compact"),
+        HiDPIResolution(logicalWidth: 3840, logicalHeight: 1080, label: "1080p HiDPI"),
+        // Below 1080p
+        HiDPIResolution(logicalWidth: 3360, logicalHeight: 946, label: "Large UI"),
+        HiDPIResolution(logicalWidth: 3200, logicalHeight: 900, label: "Larger UI"),
+        HiDPIResolution(logicalWidth: 3008, logicalHeight: 846, label: "Extra Large"),
+        HiDPIResolution(logicalWidth: 2560, logicalHeight: 720, label: "1:1 Retina"),
     ]
 
     /// Common presets for other panel resolutions
@@ -32,7 +42,7 @@ enum OverrideManager {
         vendorID: UInt32,
         productID: UInt32,
         resolutions: [HiDPIResolution]
-    ) -> Data {
+    ) -> Data? {
         var scaleEntries: [Data] = []
 
         for res in resolutions {
@@ -45,14 +55,19 @@ enum OverrideManager {
             "scale-resolutions": scaleEntries,
         ]
 
-        return try! PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        do {
+            return try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        } catch {
+            logger.error("Failed to serialize override plist: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     /// Encodes a single HiDPI resolution entry.
     ///
-    /// Format: 16 bytes (big-endian UInt32 × 4)
-    ///   [0..3]  backing width  (logical × 2)
-    ///   [4..7]  backing height (logical × 2)
+    /// Format: 16 bytes (big-endian UInt32 x 4)
+    ///   [0..3]  backing width  (logical x 2)
+    ///   [4..7]  backing height (logical x 2)
     ///   [8..11] flags — 0x00000001 = HiDPI
     ///   [12..15] reserved — 0x00000000
     private static func encodeHiDPIEntry(logicalWidth: Int, logicalHeight: Int) -> Data {
@@ -89,14 +104,21 @@ enum OverrideManager {
     // MARK: - Install / Remove
 
     static func install(for display: ExternalDisplay, resolutions: [HiDPIResolution]) throws {
-        let plistData = generateOverridePlist(
+        guard let plistData = generateOverridePlist(
             vendorID: display.vendorID,
             productID: display.productID,
             resolutions: resolutions
-        )
+        ) else {
+            throw RetinaScalerError.overrideInstallFailed("Failed to generate override plist")
+        }
 
         let tempFile = NSTemporaryDirectory() + "DisplayProductID-\(display.productHex)"
         try plistData.write(to: URL(fileURLWithPath: tempFile))
+
+        defer {
+            // Clean temp file regardless of outcome
+            try? FileManager.default.removeItem(atPath: tempFile)
+        }
 
         let script = """
         do shell script "mkdir -p '\(display.overrideDirPath)' && cp '\(tempFile)' '\(display.overrideFilePath)'" \
@@ -106,13 +128,13 @@ enum OverrideManager {
         var errorInfo: NSDictionary?
         NSAppleScript(source: script)?.executeAndReturnError(&errorInfo)
 
-        // Clean temp file
-        try? FileManager.default.removeItem(atPath: tempFile)
-
         if let errorInfo {
             let msg = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown error"
+            logger.error("Override install failed: \(msg)")
             throw RetinaScalerError.overrideInstallFailed(msg)
         }
+
+        logger.info("Override installed for display \(display.name) at \(display.overrideFilePath)")
     }
 
     static func remove(for display: ExternalDisplay) throws {
@@ -127,7 +149,10 @@ enum OverrideManager {
 
         if let errorInfo {
             let msg = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown error"
+            logger.error("Override removal failed: \(msg)")
             throw RetinaScalerError.overrideRemoveFailed(msg)
         }
+
+        logger.info("Override removed for display \(display.name)")
     }
 }

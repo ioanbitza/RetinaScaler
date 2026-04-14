@@ -1,5 +1,8 @@
 import CoreGraphics
 import Foundation
+import os.log
+
+private let logger = Logger(subsystem: "com.astralbyte.retinascaler", category: "DisplayModeService")
 
 enum DisplayModeService {
 
@@ -7,6 +10,7 @@ enum DisplayModeService {
         let options = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
 
         guard let cgModes = CGDisplayCopyAllDisplayModes(displayID, options) as? [CGDisplayMode] else {
+            logger.warning("CGDisplayCopyAllDisplayModes returned nil for display \(displayID)")
             return []
         }
 
@@ -40,13 +44,30 @@ enum DisplayModeService {
 
     static func switchMode(_ mode: DisplayModeInfo, for displayID: CGDirectDisplayID) -> Bool {
         var config: CGDisplayConfigRef?
-        guard CGBeginDisplayConfiguration(&config) == .success else { return false }
+        let beginResult = CGBeginDisplayConfiguration(&config)
+        guard beginResult == .success else {
+            logger.error("CGBeginDisplayConfiguration failed with code \(beginResult.rawValue) for display \(displayID)")
+            return false
+        }
+
         CGConfigureDisplayWithDisplayMode(config, displayID, mode.mode, nil)
-        return CGCompleteDisplayConfiguration(config, .permanently) == .success
+
+        let completeResult = CGCompleteDisplayConfiguration(config, .permanently)
+        if completeResult != .success {
+            logger.error("CGCompleteDisplayConfiguration failed with code \(completeResult.rawValue) for display \(displayID)")
+            return false
+        }
+
+        logger.info("Switched display \(displayID) to \(mode.description)")
+        return true
     }
 
-    /// Checks if a 5120×1440 HiDPI mode is available (the main goal for the G9 Neo)
+    /// Checks if a HiDPI mode matching the native resolution is available
     static func hasNativeHiDPI(for displayID: CGDirectDisplayID) -> Bool {
-        availableModes(for: displayID).contains { $0.isHiDPI && $0.width == 5120 && $0.height == 1440 }
+        let nativeWidth = CGDisplayPixelsWide(displayID)
+        let nativeHeight = CGDisplayPixelsHigh(displayID)
+        return availableModes(for: displayID).contains {
+            $0.isHiDPI && $0.width == nativeWidth && $0.height == nativeHeight
+        }
     }
 }

@@ -68,6 +68,8 @@ enum RetinaScalerError: LocalizedError {
     case overrideInstallFailed(String)
     case overrideRemoveFailed(String)
     case modeSwitchFailed
+    case virtualDisplayCreationFailed(String)
+    case displayConfigurationFailed(Int32)
 
     var errorDescription: String? {
         switch self {
@@ -75,6 +77,8 @@ enum RetinaScalerError: LocalizedError {
         case .overrideInstallFailed(let msg): return "Override install failed: \(msg)"
         case .overrideRemoveFailed(let msg): return "Override remove failed: \(msg)"
         case .modeSwitchFailed: return "Failed to switch display mode"
+        case .virtualDisplayCreationFailed(let msg): return "Virtual display creation failed: \(msg)"
+        case .displayConfigurationFailed(let code): return "Display configuration failed (error \(code))"
         }
     }
 }

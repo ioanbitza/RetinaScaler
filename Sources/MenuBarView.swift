@@ -1,59 +1,78 @@
 import SwiftUI
 
+// MARK: - Design Tokens
+
+private enum MenuTheme {
+    static let panelPadding: CGFloat = 10
+    static let sectionSpacing: CGFloat = 10
+    static let cardCorner: CGFloat = 10
+    static let cardPadding: CGFloat = 10
+    static let rowVertical: CGFloat = 5
+    static let rowHorizontal: CGFloat = 10
+
+    static let cardBackground = Color.white.opacity(0.04)
+    static let cardBorder = Color.white.opacity(0.06)
+    static let subtleDivider = Color.white.opacity(0.08)
+    static let accentHiDPI = Color.green
+    static let accentStandard = Color.blue
+    static let accentHDR = Color.orange
+    static let accentDanger = Color.red
+}
+
+// MARK: - Main Menu Bar View
+
 struct MenuBarView: View {
     @State private var manager = DisplayManager()
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(spacing: MenuTheme.sectionSpacing) {
                 ForEach(manager.displays) { display in
                     DisplaySection(display: display, manager: manager)
-                    if display.id != manager.displays.last?.id {
-                        Divider().padding(.horizontal, 12)
-                    }
                 }
 
                 if manager.displays.isEmpty {
                     emptyView
                 }
 
-                Divider().padding(.horizontal, 12)
-                toolsSection
+                settingsCard
             }
-            .padding(.vertical, 8)
+            .padding(MenuTheme.panelPadding)
         }
-        .frame(width: 340, height: 650)
+        .frame(width: 360, height: 660)
         .onAppear {
             manager.refresh()
             manager.setupHotkeys()
         }
     }
 
+    // MARK: - Empty State
+
     private var emptyView: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 10) {
             Image(systemName: "display.trianglebadge.exclamationmark")
-                .font(.title2)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(.tertiary)
             Text("No displays detected")
-                .font(.caption)
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
+            Text("Connect a display or click Refresh")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
+        .padding(.vertical, 32)
+        .cardStyle()
     }
 
-    private var toolsSection: some View {
-        VStack(alignment: .leading, spacing: 1) {
+    // MARK: - Settings Card
+
+    private var settingsCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Settings header
             DisclosureGroup {
-                VStack(alignment: .leading, spacing: 1) {
-                    MenuRow("Arrangement") {
-                        Menu("Position") {
-                            ForEach(DisplayArrangement.Preset.allCases, id: \.rawValue) { preset in
-                                Button(preset.rawValue) { manager.applyArrangement(preset) }
-                            }
-                        }
-                        .controlSize(.small)
-                    }
+                VStack(alignment: .leading, spacing: 0) {
+                    SectionDivider()
 
                     ToggleRow("Launch at login", isOn: manager.launchAtLogin) {
                         manager.toggleLaunchAtLogin()
@@ -67,53 +86,105 @@ struct MenuBarView: View {
                         }
                     }
 
-                    Text("  ^⌥H HiDPI   ^⌥R HDR   ^⌥↑↓ Brightness   ^⌥F Hz")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 2)
+                    // Keyboard shortcut hints
+                    HStack(spacing: 8) {
+                        shortcutHint("^⌥H", label: "HiDPI")
+                        shortcutHint("^⌥R", label: "HDR")
+                        shortcutHint("^⌥↑↓", label: "Bright")
+                        shortcutHint("^⌥F", label: "Hz")
+                    }
+                    .padding(.horizontal, MenuTheme.rowHorizontal)
+                    .padding(.vertical, 6)
                 }
             } label: {
-                Label("Tools", systemImage: "wrench.and.screwdriver")
-                    .font(.callout.bold())
+                Label("Settings", systemImage: "gear")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
+            .padding(.horizontal, MenuTheme.cardPadding)
+            .padding(.vertical, 8)
 
+            // Status message
             if let msg = manager.statusMessage {
+                SectionDivider()
                 HStack(spacing: 6) {
                     Image(systemName: "info.circle.fill")
                         .foregroundStyle(.blue)
-                        .font(.caption2)
+                        .font(.system(size: 10))
                     Text(msg)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
+                .padding(.horizontal, MenuTheme.cardPadding + 2)
+                .padding(.vertical, 8)
             }
 
-            Divider().padding(.horizontal, 12)
+            // Virtual Displays management
+            let virtualDisplays = VirtualDisplayManager.listVirtualDisplays()
+            if !virtualDisplays.isEmpty {
+                SectionDivider()
 
-            Button(action: { manager.refresh() }) {
-                Label("Refresh Displays", systemImage: "arrow.clockwise")
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "display.and.arrow.down")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.orange)
+                        Text("Virtual Displays (\(virtualDisplays.count))")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.orange)
+                    }
+                    .padding(.horizontal, MenuTheme.rowHorizontal)
+                    .padding(.vertical, 4)
+
+                    ForEach(Array(virtualDisplays.enumerated()), id: \.offset) { _, vd in
+                        HStack(spacing: 6) {
+                            Image(systemName: "display")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                            Text("\(vd.width)×\(vd.height)")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Text("ID: \(vd.id)")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, MenuTheme.rowHorizontal + 4)
+                        .padding(.vertical, 2)
+                    }
+
+                    ActionRow("Remove All Virtual Displays", icon: "trash", tint: .orange) {
+                        VirtualDisplayManager.disable()
+                        VirtualDisplayManager.forceCleanupOrphanedDisplays()
+                        manager.refresh()
+                    }
+                }
             }
-            .buttonStyle(.plain)
-            .font(.callout)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 5)
 
-            Button(action: {
+            SectionDivider()
+
+            // Action buttons
+            ActionRow("Refresh Displays", icon: "arrow.clockwise", tint: .primary) {
+                manager.refresh()
+            }
+
+            ActionRow("Quit RetinaScaler", icon: "power", tint: MenuTheme.accentDanger) {
                 manager.disableHiDPI()
                 manager.hotkeyManager.stop()
                 NSApplication.shared.terminate(nil)
-            }) {
-                Label("Quit RetinaScaler", systemImage: "power")
             }
-            .buttonStyle(.plain)
-            .font(.callout)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 5)
+        }
+        .cardStyle()
+    }
+
+    private func shortcutHint(_ keys: String, label: String) -> some View {
+        HStack(spacing: 3) {
+            Text(keys)
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundStyle(.tertiary)
+            Text(label)
+                .font(.system(size: 9))
+                .foregroundStyle(.quaternary)
         }
     }
 }
@@ -124,242 +195,550 @@ struct DisplaySection: View {
     let display: ExternalDisplay
     @Bindable var manager: DisplayManager
     @State private var expanded = true
+    @State private var displayModes: [DisplayModeInfo] = []
+    @State private var displayCurrentMode: DisplayModeInfo?
+
+    private var displayIcon: String {
+        display.isBuiltIn ? "laptopcomputer" : "display"
+    }
+
+    private var accentColor: Color {
+        display.isBuiltIn ? .blue : .purple
+    }
 
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
-            VStack(alignment: .leading, spacing: 1) {
-                if display.isBuiltIn {
-                    builtInControls
-                } else {
-                    externalControls
-                }
-            }
-        } label: {
+        VStack(alignment: .leading, spacing: 0) {
+            // Display Header
             displayHeader
+                .padding(.horizontal, MenuTheme.cardPadding)
+                .padding(.top, MenuTheme.cardPadding)
+                .padding(.bottom, 6)
+
+            if expanded {
+                SectionDivider()
+
+                VStack(alignment: .leading, spacing: 0) {
+                    displayControls
+                }
+                .padding(.bottom, 4)
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
+        .cardStyle()
+        .onAppear { refreshDisplayModes() }
+        .onChange(of: manager.hiDPIActive) { refreshDisplayModes() }
+    }
+
+    private func refreshDisplayModes() {
+        displayModes = DisplayModeService.availableModes(for: display.id)
+        displayCurrentMode = DisplayModeService.currentMode(for: display.id)
     }
 
     // MARK: - Header
 
     private var displayHeader: some View {
-        HStack {
-            Text(display.name)
-                .font(.callout.bold())
-            Spacer()
-            if !display.isBuiltIn && manager.hiDPIActive {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                expanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                // Display icon with accent
+                Image(systemName: displayIcon)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(accentColor)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(display.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.primary)
+
+                    if let current = displayCurrentMode {
+                        Text("\(current.width)x\(current.height) @ \(Int(current.refreshRate))Hz")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+
+                Spacer()
+
+                // Status badges
+                HStack(spacing: 4) {
+                    if !display.isBuiltIn && manager.hiDPIActive {
+                        StatusBadge("HiDPI", color: MenuTheme.accentHiDPI)
+                    }
+                    if display.isBuiltIn {
+                        StatusBadge("Built-in", color: .secondary)
+                    }
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Display Controls
+
+    @ViewBuilder
+    private var displayControls: some View {
+        // HiDPI section (external only)
+        if !display.isBuiltIn {
+            hiDPISection
+
+            SectionDivider()
+        }
+
+        // Resolution picker
+        resolutionPicker
+
+        SectionDivider()
+
+        // Refresh Rate
+        refreshRatePicker
+
+        // HDR (external only)
+        if !display.isBuiltIn && manager.hdrAvailable {
+            ToggleRow("HDR Mode", icon: "sun.max.trianglebadge.exclamationmark", isOn: manager.hdrEnabled) {
+                manager.toggleHDR()
+            }
+        }
+
+        // Night Shift is system-wide — only show on first display to avoid confusion
+        if manager.nightShiftAvailable && display.id == manager.displays.first?.id {
+            ToggleRow("Night Shift (all displays)", icon: "moon.fill", isOn: manager.nightShiftEnabled) {
+                manager.toggleNightShift()
+            }
+        }
+
+        // DDC Brightness (external only)
+        if !display.isBuiltIn && manager.ddcAvailable {
+            SectionDivider()
+            brightnessSlider
+            contrastSlider
+        }
+
+        // Per-display tools
+        SectionDivider()
+        displayToolsSection
+    }
+
+    // MARK: - HiDPI Section
+
+    @ViewBuilder
+    private var hiDPISection: some View {
+        // Native HiDPI modes from macOS API (full refresh rate)
+        let nativeHiDPI = deduplicate(displayModes
+            .filter { $0.isHiDPI && $0.width >= 1920 && $0.height >= 540 }
+            .sorted { $0.width > $1.width })
+
+        // Virtual display resolutions (higher than what native supports)
+        let virtualResolutions = VirtualDisplayManager.scaledResolutions(
+            nativeWidth: display.nativeWidth,
+            nativeHeight: display.nativeHeight
+        ).filter { res in
+            // Only show virtual resolutions that DON'T exist as native modes
+            !nativeHiDPI.contains { $0.width == res.logical.0 && $0.height == res.logical.1 }
+        }
+
+        // Disable HiDPI button when virtual display is active
+        if manager.hiDPIActive {
+            MenuButton("Disable Virtual HiDPI", icon: "xmark.circle", tint: MenuTheme.accentDanger) {
+                manager.disableHiDPI()
+                refreshDisplayModes()
+            }
+        }
+
+        // Native HiDPI section
+        if !nativeHiDPI.isEmpty {
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(nativeHiDPI) { mode in
+                        hiDPIRow(mode, isVirtual: false)
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Label("HiDPI Native", systemImage: "sparkles")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("@240Hz")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.cyan)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.cyan.opacity(0.12), in: Capsule())
+                }
+            }
+            .padding(.horizontal, MenuTheme.rowHorizontal)
+            .padding(.vertical, MenuTheme.rowVertical)
+        }
+
+        // Virtual Display HiDPI section (higher resolutions)
+        if !virtualResolutions.isEmpty {
+            SectionDivider()
+
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(virtualResolutions.enumerated()), id: \.offset) { _, res in
+                        virtualHiDPIRow(logW: res.logical.0, logH: res.logical.1, label: res.label)
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Label("HiDPI Virtual Display", systemImage: "display.and.arrow.down")
+                        .font(.system(size: 12, weight: .medium))
+                    if manager.hiDPIActive {
+                        Text("Active")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.green)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(.green.opacity(0.15), in: Capsule())
+                    }
+                }
+            }
+            .padding(.horizontal, MenuTheme.rowHorizontal)
+            .padding(.vertical, MenuTheme.rowVertical)
+        }
+
+        // Fallback if no HiDPI modes at all
+        if nativeHiDPI.isEmpty && virtualResolutions.isEmpty {
+            MenuButton("Install HiDPI Overrides", icon: "sparkles", tint: MenuTheme.accentHiDPI) {
+                manager.enableHiDPI(for: display)
+                refreshDisplayModes()
+            }
+        }
+    }
+
+    private func hiDPIRow(_ mode: DisplayModeInfo, isVirtual: Bool) -> some View {
+        let isCurrent = displayCurrentMode?.width == mode.width
+            && displayCurrentMode?.height == mode.height
+            && displayCurrentMode?.isHiDPI == mode.isHiDPI
+
+        return Button {
+            manager.switchMode(to: mode, for: display)
+            refreshDisplayModes()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: isCurrent ? "circle.inset.filled" : "circle")
+                    .font(.system(size: 10))
+                    .foregroundStyle(isCurrent ? MenuTheme.accentHiDPI : Color.gray)
+
+                Text(verbatim: "\(mode.width)×\(mode.height)")
+                    .font(.system(size: 12, design: .monospaced))
+
                 Text("HiDPI")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.green)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
                     .background(.green.opacity(0.15), in: Capsule())
+
+                Text(verbatim: "@\(Int(mode.refreshRate))Hz")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                if isCurrent {
+                    Image(systemName: "checkmark")
+                        .font(.caption2.bold())
+                        .foregroundStyle(MenuTheme.accentHiDPI)
+                }
             }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .background(isCurrent ? MenuTheme.accentHiDPI.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 4))
         }
+        .buttonStyle(.plain)
     }
 
-    // MARK: - Built-in Display
+    private func virtualHiDPIRow(logW: Int, logH: Int, label: String) -> some View {
+        let isActive = manager.hiDPIActive
+            && displayCurrentMode?.width == logW
+            && displayCurrentMode?.height == logH
 
-    private var builtInControls: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            if let mode = currentBuiltInMode {
-                InfoRow("Resolution", value: "\(mode.width)×\(mode.height)")
+        return Button {
+            manager.enableHiDPI(for: display, logicalWidth: logW, logicalHeight: logH)
+            refreshDisplayModes()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: isActive ? "circle.inset.filled" : "circle")
+                    .font(.system(size: 10))
+                    .foregroundStyle(isActive ? Color.purple : Color.gray)
+
+                Text(verbatim: "\(logW)×\(logH)")
+                    .font(.system(size: 12, design: .monospaced))
+
+                Text("HiDPI")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.purple)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(.purple.opacity(0.15), in: Capsule())
+
+                Text(verbatim: label)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                if isActive {
+                    Image(systemName: "checkmark")
+                        .font(.caption2.bold())
+                        .foregroundStyle(.purple)
+                }
             }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .background(isActive ? Color.purple.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 4))
         }
+        .buttonStyle(.plain)
     }
 
-    private var currentBuiltInMode: DisplayModeInfo? {
-        DisplayModeService.currentMode(for: display.id)
-    }
+    // MARK: - Per-Display Tools
 
-    // MARK: - External Display
-
-    private var externalControls: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            // Current mode info
-            if let current = manager.currentMode {
-                InfoRow("Resolution", value: "\(current.width)×\(current.height)\(current.isHiDPI ? " HiDPI" : "")")
-                InfoRow("Refresh Rate", value: "\(Int(current.refreshRate))Hz")
-            }
-
-            Divider().padding(.vertical, 4)
-
-            // HiDPI toggle
-            if manager.hiDPIActive {
-                MenuButton("Disable HiDPI", icon: "xmark.circle", tint: .red) {
-                    manager.disableHiDPI()
-                }
-            } else {
-                MenuButton("Enable HiDPI", icon: "sparkles", tint: .blue) {
-                    manager.enableHiDPI(for: display)
-                }
-            }
-
-            Divider().padding(.vertical, 4)
-
-            // Resolution picker
-            resolutionPicker
-
-            Divider().padding(.vertical, 4)
-
-            // Refresh Rate
-            refreshRatePicker
-
-            // HDR
-            if manager.hdrAvailable {
-                ToggleRow("HDR Mode", isOn: manager.hdrEnabled) {
-                    manager.toggleHDR()
+    private var displayToolsSection: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 0) {
+                if !display.isBuiltIn {
+                    MenuRow("Arrangement") {
+                        Menu("Position") {
+                            ForEach(DisplayArrangement.Preset.allCases, id: \.rawValue) { preset in
+                                Button(preset.rawValue) { manager.applyArrangement(preset, for: display) }
+                            }
+                        }
+                        .controlSize(.small)
+                    }
+                } else {
+                    MenuRow("Arrangement") {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.green)
+                            Text("Main Display")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
-
-            // Night Shift
-            if manager.nightShiftAvailable {
-                ToggleRow("Night Shift", isOn: manager.nightShiftEnabled) {
-                    manager.toggleNightShift()
-                }
-            }
-
-            // DDC Brightness
-            if manager.ddcAvailable {
-                Divider().padding(.vertical, 4)
-                brightnessSlider
-                contrastSlider
-            }
+        } label: {
+            Label("Tools", systemImage: "wrench.and.screwdriver")
+                .font(.system(size: 12, weight: .medium))
         }
+        .padding(.horizontal, MenuTheme.cardPadding)
+        .padding(.vertical, 6)
     }
 
     // MARK: - Resolution Picker
 
     private var resolutionPicker: some View {
-        let hiDPIModes = deduplicate(manager.availableModes
-            .filter { $0.isHiDPI && $0.width >= 2560 }
-            .sorted { $0.width > $1.width })
+        let minWidth = display.isBuiltIn ? 1024 : 2560
+        let minHeight = display.isBuiltIn ? 640 : 720
 
-        let stdModes = deduplicate(manager.availableModes
-            .filter { !$0.isHiDPI && $0.width >= 2560 && $0.height >= 720 }
+        // On external displays, HiDPI modes are handled by the dedicated HiDPI section
+        // so only show standard (non-HiDPI) modes here.
+        // On built-in displays, show both since there's no virtual display involved.
+        let showHiDPI = display.isBuiltIn
+
+        let hiDPIModes = showHiDPI ? deduplicate(displayModes
+            .filter { $0.isHiDPI && $0.width >= minWidth }
+            .sorted { $0.width > $1.width }) : []
+
+        let stdModes = deduplicate(displayModes
+            .filter { !$0.isHiDPI && $0.width >= minWidth && $0.height >= minHeight }
             .sorted { $0.width > $1.width })
 
         return DisclosureGroup {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 2) {
                 if !hiDPIModes.isEmpty {
-                    Text("HiDPI")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.top, 4)
+                    resolutionGroupHeader("HiDPI", color: MenuTheme.accentHiDPI, icon: "sparkles")
                     ForEach(hiDPIModes) { mode in
                         resolutionRow(mode)
                     }
                 }
                 if !stdModes.isEmpty {
-                    Text("Standard")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.top, 4)
-                    ForEach(stdModes.prefix(8)) { mode in
+                    if !hiDPIModes.isEmpty {
+                        SectionDivider()
+                            .padding(.vertical, 2)
+                    }
+                    resolutionGroupHeader("Standard", color: MenuTheme.accentStandard, icon: "rectangle.on.rectangle")
+                    ForEach(stdModes.prefix(10)) { mode in
                         resolutionRow(mode)
                     }
                 }
             }
+            .padding(.vertical, 4)
         } label: {
             Label("Resolutions", systemImage: "rectangle.split.3x1")
-                .font(.callout)
+                .font(.system(size: 12, weight: .medium))
         }
+        .padding(.horizontal, MenuTheme.cardPadding)
+        .padding(.vertical, 6)
+    }
+
+    private func resolutionGroupHeader(_ title: String, color: Color, icon: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(color)
+            Text(title)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(color)
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 4)
+        .padding(.bottom, 2)
     }
 
     private func resolutionRow(_ mode: DisplayModeInfo) -> some View {
-        let isCurrent = manager.currentMode?.width == mode.width
-            && manager.currentMode?.height == mode.height
-            && manager.currentMode?.isHiDPI == mode.isHiDPI
+        let isCurrent = displayCurrentMode?.width == mode.width
+            && displayCurrentMode?.height == mode.height
+            && displayCurrentMode?.isHiDPI == mode.isHiDPI
 
         return Button {
             manager.switchMode(to: mode, for: display)
+            refreshDisplayModes()
         } label: {
             HStack(spacing: 6) {
-                Text(verbatim: "\(mode.width)×\(mode.height)")
+                // Active indicator
+                Circle()
+                    .fill(isCurrent ? (mode.isHiDPI ? MenuTheme.accentHiDPI : MenuTheme.accentStandard) : .clear)
+                    .frame(width: 5, height: 5)
+
+                Text(verbatim: "\(mode.width) x \(mode.height)")
                     .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(isCurrent ? .primary : .secondary)
+
                 if mode.isHiDPI {
                     Text("HiDPI")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.yellow)
-                        .padding(.horizontal, 4)
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(MenuTheme.accentHiDPI)
+                        .padding(.horizontal, 5)
                         .padding(.vertical, 1)
-                        .background(.yellow.opacity(0.15), in: Capsule())
+                        .background(MenuTheme.accentHiDPI.opacity(0.12), in: Capsule())
                 }
-                Text(verbatim: "@\(Int(mode.refreshRate))Hz")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+
                 Spacer()
+
+                Text(verbatim: "\(Int(mode.refreshRate))Hz")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+
                 if isCurrent {
                     Image(systemName: "checkmark")
-                        .font(.caption2.bold())
-                        .foregroundStyle(.green)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(mode.isHiDPI ? MenuTheme.accentHiDPI : MenuTheme.accentStandard)
                 }
             }
-            .padding(.vertical, 3)
+            .padding(.vertical, 4)
             .padding(.horizontal, 8)
-            .background(isCurrent ? Color.accentColor.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 4))
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isCurrent ? (mode.isHiDPI ? MenuTheme.accentHiDPI : MenuTheme.accentStandard).opacity(0.08) : .clear)
+            )
         }
         .buttonStyle(.plain)
     }
 
     // MARK: - Refresh Rate
 
+    @ViewBuilder
     private var refreshRatePicker: some View {
-        RefreshRateRow(manager: manager, display: display)
+        let rates = availableRates
+        if !rates.isEmpty {
+            rateButtons(rates: rates)
+        }
+    }
+
+    private func rateButtons(rates: [Double]) -> some View {
+        let currentHz: Double = displayCurrentMode?.refreshRate ?? 0
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("Refresh Rate")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, MenuTheme.rowHorizontal)
+
+            HStack(spacing: 6) {
+                ForEach(rates, id: \.self) { hz in
+                    let isActive = abs(currentHz - hz) < 1
+                    Button {
+                        switchRefreshRate(hz)
+                    } label: {
+                        Text("\(Int(hz))Hz")
+                            .font(.system(size: 11, weight: isActive ? .bold : .regular, design: .monospaced))
+                            .foregroundStyle(isActive ? .white : .secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(isActive ? MenuTheme.accentStandard : Color.white.opacity(0.05))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .strokeBorder(isActive ? MenuTheme.accentStandard.opacity(0.5) : Color.white.opacity(0.08), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, MenuTheme.rowHorizontal)
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var availableRates: [Double] {
+        let targetWidth = display.nativeWidth
+        return Array(Set(displayModes
+            .filter { !$0.isHiDPI && $0.width == targetWidth }
+            .map { $0.refreshRate }))
+            .sorted(by: >)
+    }
+
+    private func switchRefreshRate(_ hz: Double) {
+        let w = display.nativeWidth
+        let h = display.nativeHeight
+
+        if let mode = displayModes.first(where: {
+            $0.width == w && $0.height == h && !$0.isHiDPI && abs($0.refreshRate - hz) < 1
+        }) {
+            manager.switchMode(to: mode, for: display)
+            refreshDisplayModes()
+        }
     }
 
     // MARK: - Brightness / Contrast
 
     private var brightnessSlider: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "sun.min")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .frame(width: 14)
-            Slider(
-                value: Binding(
-                    get: { Double(max(0, manager.brightness)) },
-                    set: { manager.setBrightness(Int($0)) }
-                ),
-                in: 0...100, step: 1
-            )
-            Image(systemName: "sun.max.fill")
-                .font(.caption2)
-                .foregroundStyle(.yellow)
-                .frame(width: 14)
-            Text(verbatim: "\(max(0, manager.brightness))%")
-                .font(.system(size: 11, design: .monospaced))
-                .frame(width: 32, alignment: .trailing)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 2)
+        SliderRow(
+            iconMin: "sun.min",
+            iconMax: "sun.max.fill",
+            iconMaxColor: .yellow,
+            value: Binding(
+                get: { Double(max(0, manager.brightness)) },
+                set: { manager.setBrightness(Int($0)) }
+            ),
+            range: 0...100,
+            displayValue: "\(max(0, manager.brightness))%"
+        )
     }
 
     private var contrastSlider: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "circle.lefthalf.filled")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .frame(width: 14)
-            Slider(
-                value: Binding(
-                    get: { Double(max(0, manager.contrast)) },
-                    set: { manager.setContrast(Int($0)) }
-                ),
-                in: 0...100, step: 1
-            )
-            Image(systemName: "circle.righthalf.filled")
-                .font(.caption2)
-                .frame(width: 14)
-            Text(verbatim: "\(max(0, manager.contrast))%")
-                .font(.system(size: 11, design: .monospaced))
-                .frame(width: 32, alignment: .trailing)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 2)
+        SliderRow(
+            iconMin: "circle.lefthalf.filled",
+            iconMax: "circle.righthalf.filled",
+            iconMaxColor: .primary,
+            value: Binding(
+                get: { Double(max(0, manager.contrast)) },
+                set: { manager.setContrast(Int($0)) }
+            ),
+            range: 0...100,
+            displayValue: "\(max(0, manager.contrast))%"
+        )
     }
 
     // MARK: - Helpers
@@ -373,8 +752,60 @@ struct DisplaySection: View {
     }
 }
 
-// MARK: - Reusable Row Components
+// MARK: - Reusable Components
 
+/// Card-style container modifier
+struct CardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: MenuTheme.cardCorner)
+                    .fill(MenuTheme.cardBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: MenuTheme.cardCorner)
+                    .strokeBorder(MenuTheme.cardBorder, lineWidth: 0.5)
+            )
+    }
+}
+
+extension View {
+    func cardStyle() -> some View {
+        modifier(CardModifier())
+    }
+}
+
+/// Subtle section divider within cards
+struct SectionDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(MenuTheme.subtleDivider)
+            .frame(height: 0.5)
+            .padding(.horizontal, MenuTheme.cardPadding)
+    }
+}
+
+/// Status badge (HiDPI, Built-in, etc.)
+struct StatusBadge: View {
+    let label: String
+    let color: Color
+
+    init(_ label: String, color: Color) {
+        self.label = label
+        self.color = color
+    }
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.12), in: Capsule())
+    }
+}
+
+/// Row with label and trailing content
 struct MenuRow<Content: View>: View {
     let label: String
     let content: Content
@@ -387,15 +818,17 @@ struct MenuRow<Content: View>: View {
     var body: some View {
         HStack {
             Text(label)
-                .font(.callout)
+                .font(.system(size: 12))
+                .foregroundStyle(.primary)
             Spacer()
             content
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, MenuTheme.rowHorizontal)
+        .padding(.vertical, MenuTheme.rowVertical)
     }
 }
 
+/// Info label-value row
 struct InfoRow: View {
     let label: String
     let value: String
@@ -408,42 +841,53 @@ struct InfoRow: View {
     var body: some View {
         HStack {
             Text(label)
-                .font(.callout)
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
             Spacer()
             Text(verbatim: value)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.primary)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 2)
+        .padding(.horizontal, MenuTheme.rowHorizontal)
+        .padding(.vertical, 3)
     }
 }
 
+/// Toggle row with optional icon
 struct ToggleRow: View {
     let label: String
+    let icon: String?
     let isOn: Bool
     let action: () -> Void
 
-    init(_ label: String, isOn: Bool, action: @escaping () -> Void) {
+    init(_ label: String, icon: String? = nil, isOn: Bool, action: @escaping () -> Void) {
         self.label = label
+        self.icon = icon
         self.isOn = isOn
         self.action = action
     }
 
     var body: some View {
-        HStack {
+        HStack(spacing: 6) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+            }
             Text(label)
-                .font(.callout)
+                .font(.system(size: 12))
             Spacer()
             Toggle("", isOn: Binding(get: { isOn }, set: { _ in action() }))
                 .toggleStyle(.switch)
                 .controlSize(.mini)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 2)
+        .padding(.horizontal, MenuTheme.rowHorizontal)
+        .padding(.vertical, MenuTheme.rowVertical)
     }
 }
 
+/// Standalone refresh rate row (kept for compatibility)
 struct RefreshRateRow: View {
     let manager: DisplayManager
     let display: ExternalDisplay
@@ -459,14 +903,14 @@ struct RefreshRateRow: View {
         let currentHz: Double = manager.currentMode?.refreshRate ?? 0
         return HStack {
             Text("Refresh Rate")
-                .font(.callout)
+                .font(.system(size: 12))
             Spacer()
             ForEach(rates, id: \.self) { hz in
                 rateButton(hz: hz, isActive: abs(currentHz - hz) < 1)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, MenuTheme.rowHorizontal)
+        .padding(.vertical, MenuTheme.rowVertical)
     }
 
     private func rateButton(hz: Double, isActive: Bool) -> some View {
@@ -486,6 +930,7 @@ struct RefreshRateRow: View {
     }
 }
 
+/// Primary action button (Enable HiDPI, etc.)
 struct MenuButton: View {
     let label: String
     let icon: String
@@ -501,13 +946,90 @@ struct MenuButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label(label, systemImage: icon)
-                .frame(maxWidth: .infinity)
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(label)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .foregroundStyle(tint == MenuTheme.accentDanger ? .white : tint)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(tint.opacity(tint == MenuTheme.accentDanger ? 0.2 : 0.1))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .strokeBorder(tint.opacity(0.25), lineWidth: 0.5)
+            )
         }
-        .buttonStyle(.bordered)
-        .tint(tint)
-        .controlSize(.small)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 2)
+        .buttonStyle(.plain)
+        .padding(.horizontal, MenuTheme.rowHorizontal)
+        .padding(.vertical, 4)
+    }
+}
+
+/// Bottom-section action row (Refresh, Quit)
+struct ActionRow: View {
+    let label: String
+    let icon: String
+    let tint: Color
+    let action: () -> Void
+
+    init(_ label: String, icon: String, tint: Color = .primary, action: @escaping () -> Void) {
+        self.label = label
+        self.icon = icon
+        self.tint = tint
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11))
+                    .frame(width: 16)
+                Text(label)
+                    .font(.system(size: 12))
+                Spacer()
+            }
+            .foregroundStyle(tint)
+            .padding(.horizontal, MenuTheme.cardPadding)
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Reusable slider row for brightness/contrast
+struct SliderRow: View {
+    let iconMin: String
+    let iconMax: String
+    let iconMaxColor: Color
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let displayValue: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: iconMin)
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .frame(width: 14)
+            Slider(value: $value, in: range, step: 1)
+                .controlSize(.small)
+            Image(systemName: iconMax)
+                .font(.system(size: 10))
+                .foregroundStyle(iconMaxColor)
+                .frame(width: 14)
+            Text(verbatim: displayValue)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 32, alignment: .trailing)
+        }
+        .padding(.horizontal, MenuTheme.rowHorizontal)
+        .padding(.vertical, 4)
     }
 }

@@ -1,5 +1,8 @@
 import CoreGraphics
 import Foundation
+import os.log
+
+private let logger = Logger(subsystem: "com.astralbyte.retinascaler", category: "Arrangement")
 
 /// Manages display positioning and arrangement.
 enum DisplayArrangement {
@@ -16,7 +19,11 @@ enum DisplayArrangement {
     static func currentArrangement() -> [Position] {
         var displays = [CGDirectDisplayID](repeating: 0, count: 16)
         var count: UInt32 = 0
-        CGGetOnlineDisplayList(16, &displays, &count)
+        let result = CGGetOnlineDisplayList(16, &displays, &count)
+        guard result == .success else {
+            logger.warning("CGGetOnlineDisplayList failed with code \(result.rawValue)")
+            return []
+        }
 
         return (0..<Int(count)).map { i in
             let d = displays[i]
@@ -34,9 +41,22 @@ enum DisplayArrangement {
     /// Moves a display to a position relative to the primary display.
     static func setPosition(displayID: CGDirectDisplayID, x: Int32, y: Int32) -> Bool {
         var config: CGDisplayConfigRef?
-        guard CGBeginDisplayConfiguration(&config) == .success else { return false }
+        let beginResult = CGBeginDisplayConfiguration(&config)
+        guard beginResult == .success else {
+            logger.error("CGBeginDisplayConfiguration failed with code \(beginResult.rawValue)")
+            return false
+        }
+
         CGConfigureDisplayOrigin(config, displayID, x, y)
-        return CGCompleteDisplayConfiguration(config, .permanently) == .success
+
+        let completeResult = CGCompleteDisplayConfiguration(config, .permanently)
+        if completeResult != .success {
+            logger.error("CGCompleteDisplayConfiguration failed with code \(completeResult.rawValue)")
+            return false
+        }
+
+        logger.info("Display \(displayID) repositioned to (\(x), \(y))")
+        return true
     }
 
     /// Common arrangements relative to primary display.
@@ -50,6 +70,13 @@ enum DisplayArrangement {
 
     static func applyPreset(_ preset: Preset, displayID: CGDirectDisplayID) -> Bool {
         let primary = CGMainDisplayID()
+
+        // Don't try to reposition the primary display relative to itself
+        guard displayID != primary else {
+            logger.info("Cannot reposition primary display relative to itself")
+            return false
+        }
+
         let primaryBounds = CGDisplayBounds(primary)
         let displayMode = CGDisplayCopyDisplayMode(displayID)
         let displayW = Int32(displayMode?.width ?? 1920)

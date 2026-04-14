@@ -1,19 +1,23 @@
 import Foundation
+import os.log
+
+private let logger = Logger(subsystem: "com.astralbyte.retinascaler", category: "NightShift")
 
 /// Controls Night Shift (blue light reduction) via CoreBrightness private API.
-/// Works on external displays where Apple normally blocks Night Shift.
 enum NightShiftManager {
 
-    // Lazy-init: only created when first accessed, not at app launch
     private static var _client: NSObject?
     private static var _clientLoaded = false
 
     private static var client: NSObject? {
         if !_clientLoaded {
             _clientLoaded = true
-            if let handle = dlopen("/System/Library/PrivateFrameworks/CoreBrightness.framework/CoreBrightness", RTLD_LAZY),
+            if dlopen("/System/Library/PrivateFrameworks/CoreBrightness.framework/CoreBrightness", RTLD_LAZY) != nil,
                let cls = NSClassFromString("CBBlueLightClient") as? NSObject.Type {
                 _client = cls.init()
+                logger.info("CBBlueLightClient loaded")
+            } else {
+                logger.warning("CoreBrightness not available")
             }
         }
         return _client
@@ -25,55 +29,64 @@ enum NightShiftManager {
     }
 
     static func getStatus() -> Status? {
-        guard let client = client else { return nil }
+        guard let client else { return nil }
 
-        // Use objc_msgSend typed to avoid perform(_:with:) crashes with non-object params
-        var enabled: ObjCBool = false
-        let getSel = NSSelectorFromString("getBlueLightStatus:")
+        // CBBlueLightClient.getBlueLightStatus: takes a pointer to a
+        // CBBlueLightStatus struct. The struct layout is opaque and varies
+        // across macOS versions, so we allocate a generous buffer and read
+        // the enabled flag at the known offset.
+        let sel = NSSelectorFromString("getBlueLightStatus:")
+        guard client.responds(to: sel) else { return nil }
 
-        if client.responds(to: getSel) {
-            typealias GetStatusFn = @convention(c) (AnyObject, Selector, UnsafeMutablePointer<ObjCBool>) -> Bool
-            let method = class_getInstanceMethod(type(of: client), getSel)!
-            let imp = method_getImplementation(method)
-            let fn = unsafeBitCast(imp, to: GetStatusFn.self)
-            _ = fn(client, getSel, &enabled)
-        }
+        // The status struct is ~32 bytes. Offset 0 = enabled (Int32), offset 4 = mode, etc.
+        var statusBuf = [UInt8](repeating: 0, count: 64)
+        guard let method = class_getInstanceMethod(type(of: client), sel) else { return nil }
 
+        typealias Fn = @convention(c) (AnyObject, Selector, UnsafeMutableRawPointer) -> Bool
+        let imp = method_getImplementation(method)
+        let fn = unsafeBitCast(imp, to: Fn.self)
+        let ok = fn(client, sel, &statusBuf)
+        guard ok else { return nil }
+
+        // Byte 0: enabled (0 or 1)
+        let enabled = statusBuf[0] != 0
+
+        // Strength via separate call
         var strength: Float = 0.5
         let strengthSel = NSSelectorFromString("getStrength:")
-        if client.responds(to: strengthSel) {
-            typealias GetStrengthFn = @convention(c) (AnyObject, Selector, UnsafeMutablePointer<Float>) -> Bool
-            let method = class_getInstanceMethod(type(of: client), strengthSel)!
-            let imp = method_getImplementation(method)
-            let fn = unsafeBitCast(imp, to: GetStrengthFn.self)
-            _ = fn(client, strengthSel, &strength)
+        if client.responds(to: strengthSel),
+           let sMethod = class_getInstanceMethod(type(of: client), strengthSel) {
+            typealias SFn = @convention(c) (AnyObject, Selector, UnsafeMutablePointer<Float>) -> Bool
+            let sImp = method_getImplementation(sMethod)
+            let sFn = unsafeBitCast(sImp, to: SFn.self)
+            _ = sFn(client, strengthSel, &strength)
         }
 
-        return Status(enabled: enabled.boolValue, strength: strength)
+        return Status(enabled: enabled, strength: strength)
     }
 
     static func setEnabled(_ value: Bool) -> Bool {
-        guard let client = client else { return false }
+        guard let client else { return false }
         let sel = NSSelectorFromString("setEnabled:")
-        guard client.responds(to: sel) else { return false }
+        guard client.responds(to: sel),
+              let method = class_getInstanceMethod(type(of: client), sel)
+        else { return false }
 
-        typealias SetEnabledFn = @convention(c) (AnyObject, Selector, Bool) -> Bool
-        let method = class_getInstanceMethod(type(of: client), sel)!
+        typealias Fn = @convention(c) (AnyObject, Selector, Bool) -> Bool
         let imp = method_getImplementation(method)
-        let fn = unsafeBitCast(imp, to: SetEnabledFn.self)
-        return fn(client, sel, value)
+        return unsafeBitCast(imp, to: Fn.self)(client, sel, value)
     }
 
     static func setStrength(_ value: Float) -> Bool {
-        guard let client = client else { return false }
+        guard let client else { return false }
         let sel = NSSelectorFromString("setStrength:commit:")
-        guard client.responds(to: sel) else { return false }
+        guard client.responds(to: sel),
+              let method = class_getInstanceMethod(type(of: client), sel)
+        else { return false }
 
-        typealias SetStrengthFn = @convention(c) (AnyObject, Selector, Float, Bool) -> Bool
-        let method = class_getInstanceMethod(type(of: client), sel)!
+        typealias Fn = @convention(c) (AnyObject, Selector, Float, Bool) -> Bool
         let imp = method_getImplementation(method)
-        let fn = unsafeBitCast(imp, to: SetStrengthFn.self)
-        return fn(client, sel, value, true)
+        return unsafeBitCast(imp, to: Fn.self)(client, sel, value, true)
     }
 
     static var isAvailable: Bool {

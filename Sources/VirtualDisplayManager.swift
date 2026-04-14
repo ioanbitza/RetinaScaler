@@ -1,151 +1,317 @@
 import CoreGraphics
 import Foundation
+import os.log
 
-/// Manages a CGVirtualDisplay to enable true HiDPI on monitors where macOS
-/// won't natively offer it (logical resolution == panel resolution).
+private let logger = Logger(subsystem: "com.astralbyte.retinascaler", category: "VirtualDisplay")
+
+/// Manages CGVirtualDisplay for HiDPI on external monitors.
 ///
-/// The virtual display is kept alive as long as HiDPI is active.
-/// When the process exits, macOS automatically destroys it and reverts mirroring.
+/// Key design: the virtual display is created ONCE and REUSED. When switching
+/// between HiDPI resolutions, we call applySettings: to update the modes
+/// and then switch the active mode — no destroy/recreate cycle needed.
+/// The virtual display is only destroyed when the app quits.
 enum VirtualDisplayManager {
 
-    // The virtual display object must stay alive — stored as a strong reference.
-    private static var activeVirtualDisplay: NSObject?
+    // Store the raw pointer to the CGVirtualDisplay object.
+    // We never release this — it lives until process exit.
+    // macOS automatically cleans up virtual displays when the process dies.
+    private static var vdPointer: UnsafeMutableRawPointer?
     private static var mirroredPhysicalID: CGDirectDisplayID = 0
+    private static var cachedClasses: Classes?
 
-    static var isActive: Bool { activeVirtualDisplay != nil }
+    static var isActive: Bool { vdPointer != nil && mirroredPhysicalID != 0 }
+
+    static var virtualDisplayID: CGDirectDisplayID {
+        guard let ptr = vdPointer else { return 0 }
+        let vd = Unmanaged<NSObject>.fromOpaque(ptr).takeUnretainedValue()
+        return vd.value(forKey: "displayID") as? UInt32 ?? 0
+    }
+
+    // MARK: - Scaled HiDPI Resolutions
+
+    static func scaledResolutions(nativeWidth: Int, nativeHeight: Int) -> [(logical: (Int, Int), backing: (Int, Int), label: String)] {
+        let aspect = Double(nativeWidth) / Double(nativeHeight)
+
+        let targets: [(height: Int, label: String)] = [
+            (1440, "Native HiDPI"),
+            (1360, "Slightly Scaled"),
+            (1280, "Comfortable"),
+            (1200, "Medium"),
+            (1120, "Compact"),
+            (1080, "Most Scaled"),
+        ]
+
+        return targets.map { target in
+            let logH = target.height
+            let logW = Int(round(Double(logH) * aspect / 2.0)) * 2
+            return (logical: (logW, logH), backing: (logW * 2, logH * 2), label: target.label)
+        }
+    }
 
     // MARK: - Public API
 
-    /// Creates a virtual display, enables HiDPI, mirrors the physical display to it,
-    /// and switches to the target HiDPI mode.
     static func enableHiDPI(
         for physicalDisplayID: CGDirectDisplayID,
-        logicalWidth: Int = 5120,
-        logicalHeight: Int = 1440
+        nativeWidth: Int,
+        nativeHeight: Int,
+        logicalWidth: Int? = nil,
+        logicalHeight: Int? = nil
     ) -> Result<String, RetinaScalerError> {
 
-        // Don't create a second virtual display
-        if isActive { disable() }
+        let targetLogW: Int
+        let targetLogH: Int
+        if let lw = logicalWidth, let lh = logicalHeight {
+            targetLogW = lw
+            targetLogH = lh
+        } else {
+            let scaled = scaledResolutions(nativeWidth: nativeWidth, nativeHeight: nativeHeight)
+            guard let res = scaled.first(where: { $0.label == "Comfortable" }) ?? scaled.first else {
+                return .failure(.overrideInstallFailed("Could not compute HiDPI resolution"))
+            }
+            targetLogW = res.logical.0
+            targetLogH = res.logical.1
+        }
+
+        logger.info("HiDPI requested: \(targetLogW)x\(targetLogH)")
 
         guard let classes = loadClasses() else {
             return .failure(.overrideInstallFailed("CGVirtualDisplay API not available"))
         }
 
-        let backingWidth = UInt32(logicalWidth * 2)
-        let backingHeight = UInt32(logicalHeight * 2)
+        let maxHz = maxRefreshRate(for: physicalDisplayID)
+        let refreshRates = Array(Set([60.0, 120.0, maxHz])).sorted()
+        let allScaled = scaledResolutions(nativeWidth: nativeWidth, nativeHeight: nativeHeight)
 
-        // Build modes
-        let modes = [
-            classes.makeMode(backingWidth, backingHeight, 60),
-            classes.makeMode(backingWidth, backingHeight, 120),
-            classes.makeMode(UInt32(logicalWidth), UInt32(logicalHeight), 60),
-            classes.makeMode(UInt32(logicalWidth), UInt32(logicalHeight), 120),
-            classes.makeMode(UInt32(logicalWidth * 3/4), UInt32(logicalHeight * 3/4), 60),
-            classes.makeMode(UInt32(logicalWidth / 2), UInt32(logicalHeight / 2), 60),
-        ]
+        // Build modes for ALL resolutions
+        var modeSpecs: [(UInt32, UInt32, Double)] = []
+        for res in allScaled {
+            for hz in refreshRates {
+                modeSpecs.append((UInt32(res.backing.0), UInt32(res.backing.1), hz))
+                modeSpecs.append((UInt32(res.logical.0), UInt32(res.logical.1), hz))
+            }
+        }
+        for hz in refreshRates {
+            modeSpecs.append((UInt32(nativeWidth * 2), UInt32(nativeHeight * 2), hz))
+            modeSpecs.append((UInt32(nativeWidth), UInt32(nativeHeight), hz))
+        }
 
-        // Physical size matching the monitor (~49" ultrawide)
+        let modes = modeSpecs.compactMap { classes.makeMode($0.0, $0.1, $0.2) }
+        guard !modes.isEmpty else {
+            return .failure(.overrideInstallFailed("Failed to create display modes"))
+        }
+
+        // If virtual display already exists, REUSE it — just switch mode directly
+        if let existingID = existingVirtualDisplayID() {
+            logger.info("Reusing existing virtual display \(existingID), switching mode")
+
+            return switchVirtualDisplayMode(
+                vDisplayID: existingID, targetLogW: targetLogW, targetLogH: targetLogH,
+                physicalDisplayID: physicalDisplayID
+            )
+        }
+
+        // First time — create the virtual display
+        let maxBackW = UInt32(allScaled.map { $0.backing.0 }.max()! )
+        let maxBackH = UInt32(allScaled.map { $0.backing.1 }.max()!)
+
         let physWidth = CGDisplayScreenSize(physicalDisplayID).width
         let physHeight = CGDisplayScreenSize(physicalDisplayID).height
         let size = physWidth > 0
             ? CGSize(width: physWidth, height: physHeight)
             : CGSize(width: 1194, height: 336)
 
-        // Descriptor
         let desc = classes.descClass.init()
         desc.setValue(DispatchQueue.main, forKey: "queue")
         desc.setValue("RetinaScaler HiDPI", forKey: "name")
-        desc.setValue(backingWidth, forKey: "maxPixelsWide")
-        desc.setValue(backingHeight, forKey: "maxPixelsHigh")
+        desc.setValue(maxBackW, forKey: "maxPixelsWide")
+        desc.setValue(maxBackH, forKey: "maxPixelsHigh")
         desc.setValue(size, forKey: "sizeInMillimeters")
         desc.setValue(UInt32(0x4C2D), forKey: "vendorID")
         desc.setValue(UInt32(0xFFFE), forKey: "productID")
         desc.setValue(UInt32(12345), forKey: "serialNum")
 
-        // Allocate + init
-        guard let allocated = classes.vdClass
-            .perform(NSSelectorFromString("alloc"))?.takeUnretainedValue() as? NSObject,
-              let vd = allocated
-            .perform(NSSelectorFromString("initWithDescriptor:"), with: desc)?
-            .takeUnretainedValue() as? NSObject
-        else {
-            return .failure(.overrideInstallFailed("Failed to create virtual display"))
+        guard let vd = createVirtualDisplay(classes: classes, descriptor: desc) else {
+            return .failure(.virtualDisplayCreationFailed("Failed to create virtual display object"))
         }
 
         let vDisplayID = vd.value(forKey: "displayID") as? UInt32 ?? 0
         guard vDisplayID != 0 else {
             return .failure(.overrideInstallFailed("Virtual display has no ID"))
         }
+        logger.info("Virtual display created with ID \(vDisplayID)")
 
-        // Apply HiDPI settings
+        // Store as raw pointer — never released, lives until process exit
+        vdPointer = Unmanaged.passRetained(vd).toOpaque()
+
+        // Apply HiDPI settings with all modes
         let settings = classes.settingsClass.init()
         settings.setValue(UInt32(1), forKey: "hiDPI")
         settings.setValue(modes, forKey: "modes")
         vd.perform(NSSelectorFromString("applySettings:"), with: settings)
 
-        // Install override plist for virtual display (ensures HiDPI modes appear)
-        installVirtualOverride(logicalWidth: logicalWidth, logicalHeight: logicalHeight)
+        // Install override plist for the virtual display
+        installVirtualOverride(nativeWidth: nativeWidth, nativeHeight: nativeHeight, scaledResolutions: allScaled)
 
-        // Brief pause for macOS to register the virtual display
-        Thread.sleep(forTimeInterval: 0.5)
+        usleep(500_000)
 
-        // Find the 5120x1440 HiDPI mode on the virtual display
-        let opts = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
-        guard let vModes = CGDisplayCopyAllDisplayModes(vDisplayID, opts) as? [CGDisplayMode],
-              let targetMode = vModes.first(where: {
-                  $0.width == logicalWidth && $0.height == logicalHeight && $0.pixelWidth > $0.width
-              })
-        else {
-            return .failure(.overrideInstallFailed(
-                "HiDPI mode \(logicalWidth)×\(logicalHeight) not available on virtual display"
-            ))
+        return switchVirtualDisplayMode(
+            vDisplayID: vDisplayID, targetLogW: targetLogW, targetLogH: targetLogH,
+            physicalDisplayID: physicalDisplayID
+        )
+    }
+
+    /// Disables HiDPI mirroring but keeps the virtual display alive for reuse.
+    static func disable() {
+        logger.info("Disabling HiDPI mirroring")
+
+        if mirroredPhysicalID != 0 {
+            var config: CGDisplayConfigRef?
+            if CGBeginDisplayConfiguration(&config) == .success {
+                CGConfigureDisplayMirrorOfDisplay(config, mirroredPhysicalID, kCGNullDirectDisplay)
+                CGCompleteDisplayConfiguration(config, .forSession)
+            }
+            mirroredPhysicalID = 0
+        }
+        // NOTE: We intentionally do NOT release vdPointer.
+        // The virtual display stays alive for instant reuse.
+        // macOS cleans it up when the process exits.
+    }
+
+    /// Force cleanup: unmirrors all displays mirrored to our virtual displays.
+    static func forceCleanupOrphanedDisplays() {
+        var displays = [CGDirectDisplayID](repeating: 0, count: 32)
+        var count: UInt32 = 0
+        CGGetOnlineDisplayList(32, &displays, &count)
+
+        var config: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&config) == .success else { return }
+        var changed = false
+
+        for i in 0..<Int(count) {
+            let d = displays[i]
+            // Check if this display is mirrored to one of our virtual displays
+            let mirrorOf = CGDisplayMirrorsDisplay(d)
+            if mirrorOf != kCGNullDirectDisplay {
+                let mirrorVendor = CGDisplayVendorNumber(mirrorOf)
+                let mirrorProduct = CGDisplayModelNumber(mirrorOf)
+                if mirrorVendor == 0x4C2D && mirrorProduct == 0xFFFE {
+                    CGConfigureDisplayMirrorOfDisplay(config, d, kCGNullDirectDisplay)
+                    logger.info("Unmirrored display \(d) from virtual \(mirrorOf)")
+                    changed = true
+                }
+            }
         }
 
-        // Remember the physical display's origin so we can preserve it as main
+        if changed {
+            CGCompleteDisplayConfiguration(config, .forSession)
+        } else {
+            CGCancelDisplayConfiguration(config)
+        }
+
+        mirroredPhysicalID = 0
+    }
+
+    /// Lists all online virtual displays created by RetinaScaler.
+    static func listVirtualDisplays() -> [(id: CGDirectDisplayID, width: Int, height: Int)] {
+        var displays = [CGDirectDisplayID](repeating: 0, count: 32)
+        var count: UInt32 = 0
+        CGGetOnlineDisplayList(32, &displays, &count)
+
+        var result: [(id: CGDirectDisplayID, width: Int, height: Int)] = []
+        for i in 0..<Int(count) {
+            let d = displays[i]
+            if CGDisplayVendorNumber(d) == 0x4C2D && CGDisplayModelNumber(d) == 0xFFFE {
+                result.append((id: d, width: CGDisplayPixelsWide(d), height: CGDisplayPixelsHigh(d)))
+            }
+        }
+        return result
+    }
+
+    // MARK: - Private
+
+    private static func existingVirtualDisplayID() -> CGDirectDisplayID? {
+        guard vdPointer != nil else { return nil }
+        let id = virtualDisplayID
+        return id != 0 ? id : nil
+    }
+
+    private static func switchVirtualDisplayMode(
+        vDisplayID: CGDirectDisplayID, targetLogW: Int, targetLogH: Int,
+        physicalDisplayID: CGDirectDisplayID
+    ) -> Result<String, RetinaScalerError> {
+        let opts = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+        guard let vModes = CGDisplayCopyAllDisplayModes(vDisplayID, opts) as? [CGDisplayMode] else {
+            return .failure(.overrideInstallFailed("No modes on virtual display"))
+        }
+
+        logger.info("Virtual display \(vDisplayID) has \(vModes.count) modes")
+
+        // Find HiDPI mode matching target, prefer highest refresh rate
+        let matching = vModes
+            .filter { $0.width == targetLogW && $0.height == targetLogH && $0.pixelWidth > $0.width }
+            .sorted { $0.refreshRate > $1.refreshRate }
+
+        guard let targetMode = matching.first else {
+            // Fallback to any HiDPI mode
+            if let fallback = vModes.filter({ $0.pixelWidth > $0.width }).sorted(by: { $0.refreshRate > $1.refreshRate }).first {
+                logger.warning("Target \(targetLogW)x\(targetLogH) not found, using \(fallback.width)x\(fallback.height)")
+                return applyMode(vDisplayID: vDisplayID, mode: fallback, physicalDisplayID: physicalDisplayID)
+            }
+            return .failure(.overrideInstallFailed("HiDPI mode \(targetLogW)×\(targetLogH) not available"))
+        }
+
+        return applyMode(vDisplayID: vDisplayID, mode: targetMode, physicalDisplayID: physicalDisplayID)
+    }
+
+    private static func applyMode(
+        vDisplayID: CGDirectDisplayID, mode: CGDisplayMode,
+        physicalDisplayID: CGDirectDisplayID
+    ) -> Result<String, RetinaScalerError> {
         let physBounds = CGDisplayBounds(physicalDisplayID)
         let wasMain = CGDisplayIsMain(physicalDisplayID) != 0
+            || CGDisplayIsMain(vDisplayID) != 0
 
-        // Mirror + switch in one transaction
         var config: CGDisplayConfigRef?
-        CGBeginDisplayConfiguration(&config)
-        CGConfigureDisplayMirrorOfDisplay(config, physicalDisplayID, vDisplayID)
-        CGConfigureDisplayWithDisplayMode(config, vDisplayID, targetMode, nil)
+        guard CGBeginDisplayConfiguration(&config) == .success else {
+            return .failure(.modeSwitchFailed)
+        }
 
-        // Keep the virtual display at the same origin as the physical was,
-        // so the dock/main display stays on the Samsung
+        // Set mirror and mode on virtual display
+        CGConfigureDisplayMirrorOfDisplay(config, physicalDisplayID, vDisplayID)
+        CGConfigureDisplayWithDisplayMode(config, vDisplayID, mode, nil)
+
         if wasMain {
             CGConfigureDisplayOrigin(config, vDisplayID, Int32(physBounds.origin.x), Int32(physBounds.origin.y))
         }
 
-        let result = CGCompleteDisplayConfiguration(config, .forSession)
-
-        guard result == .success else {
+        // Use .permanently for stable frame pacing — .forSession causes periodic revalidation
+        // that manifests as micro-stutters every few seconds
+        guard CGCompleteDisplayConfiguration(config, .permanently) == .success else {
             return .failure(.modeSwitchFailed)
         }
 
-        // Store references to keep alive
-        activeVirtualDisplay = vd
         mirroredPhysicalID = physicalDisplayID
 
-        let hz = Int(targetMode.refreshRate)
-        return .success("\(logicalWidth)×\(logicalHeight) HiDPI @ \(hz)Hz active")
+        let hz = Int(mode.refreshRate)
+        logger.info("HiDPI mode set: \(mode.width)x\(mode.height) @ \(hz)Hz (backing \(mode.pixelWidth)x\(mode.pixelHeight))")
+        return .success("\(mode.width)×\(mode.height) HiDPI @ \(hz)Hz active")
     }
 
-    /// Disables HiDPI by destroying the virtual display and reverting mirroring.
-    static func disable() {
-        if mirroredPhysicalID != 0 {
-            // Undo mirroring
-            var config: CGDisplayConfigRef?
-            CGBeginDisplayConfiguration(&config)
-            CGConfigureDisplayMirrorOfDisplay(config, mirroredPhysicalID, kCGNullDirectDisplay)
-            CGCompleteDisplayConfiguration(config, .forSession)
-        }
+    // MARK: - ObjC Runtime Helpers
 
-        activeVirtualDisplay = nil
-        mirroredPhysicalID = 0
+    /// Finds the best mode for the physical display — native resolution at the target refresh rate.
+    private static func bestPhysicalMode(for displayID: CGDirectDisplayID, targetHz: Double) -> CGDisplayMode? {
+        let nativeW = CGDisplayPixelsWide(displayID)
+        let nativeH = CGDisplayPixelsHigh(displayID)
+        let opts = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+        guard let modes = CGDisplayCopyAllDisplayModes(displayID, opts) as? [CGDisplayMode] else { return nil }
+
+        // Find native resolution mode at highest Hz (ideally matching targetHz)
+        return modes
+            .filter { $0.width == nativeW && $0.height == nativeH && !($0.pixelWidth > $0.width) }
+            .sorted { abs($0.refreshRate - targetHz) < abs($1.refreshRate - targetHz) }
+            .first
     }
-
-    // MARK: - Private
 
     private struct Classes {
         let vdClass: NSObject.Type
@@ -153,52 +319,99 @@ enum VirtualDisplayManager {
         let modeClass: NSObject.Type
         let settingsClass: NSObject.Type
 
-        func makeMode(_ w: UInt32, _ h: UInt32, _ hz: Double) -> NSObject {
-            let alloc = modeClass.perform(NSSelectorFromString("alloc"))!.takeUnretainedValue() as! NSObject
-            typealias F = @convention(c) (AnyObject, Selector, UInt32, UInt32, Double) -> AnyObject?
+        func makeMode(_ w: UInt32, _ h: UInt32, _ hz: Double) -> NSObject? {
+            guard let alloc = modeClass.perform(NSSelectorFromString("alloc"))?.takeUnretainedValue() as? NSObject else {
+                return nil
+            }
             let sel = Selector(("initWithWidth:height:refreshRate:"))
-            let imp = method_getImplementation(class_getInstanceMethod(modeClass, sel)!)
-            return unsafeBitCast(imp, to: F.self)(alloc, sel, w, h, hz) as! NSObject
+            guard let method = class_getInstanceMethod(modeClass, sel) else { return nil }
+            typealias F = @convention(c) (AnyObject, Selector, UInt32, UInt32, Double) -> AnyObject?
+            let imp = method_getImplementation(method)
+            return unsafeBitCast(imp, to: F.self)(alloc, sel, w, h, hz) as? NSObject
         }
     }
 
     private static func loadClasses() -> Classes? {
+        if let c = cachedClasses { return c }
         guard let vd = NSClassFromString("CGVirtualDisplay") as? NSObject.Type,
               let desc = NSClassFromString("CGVirtualDisplayDescriptor") as? NSObject.Type,
               let mode = NSClassFromString("CGVirtualDisplayMode") as? NSObject.Type,
               let settings = NSClassFromString("CGVirtualDisplaySettings") as? NSObject.Type
         else { return nil }
-        return Classes(vdClass: vd, descClass: desc, modeClass: mode, settingsClass: settings)
+        let c = Classes(vdClass: vd, descClass: desc, modeClass: mode, settingsClass: settings)
+        cachedClasses = c
+        return c
     }
 
-    private static func installVirtualOverride(logicalWidth: Int, logicalHeight: Int) {
+    private static func maxRefreshRate(for displayID: CGDirectDisplayID) -> Double {
+        let opts = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+        guard let modes = CGDisplayCopyAllDisplayModes(displayID, opts) as? [CGDisplayMode] else { return 60 }
+        return modes.map(\.refreshRate).max() ?? 60
+    }
+
+    private static func createVirtualDisplay(classes: Classes, descriptor: NSObject) -> NSObject? {
+        // Use raw objc_msgSend to avoid ARC interference
+        typealias AllocFn = @convention(c) (AnyClass, Selector) -> UnsafeMutableRawPointer?
+        typealias InitFn = @convention(c) (UnsafeMutableRawPointer, Selector, AnyObject) -> UnsafeMutableRawPointer?
+
+        let allocSel = NSSelectorFromString("alloc")
+        let initSel = NSSelectorFromString("initWithDescriptor:")
+
+        guard let allocImp = class_getClassMethod(classes.vdClass, allocSel).map({ method_getImplementation($0) }),
+              let initImp = class_getInstanceMethod(classes.vdClass, initSel).map({ method_getImplementation($0) })
+        else {
+            logger.error("Could not find alloc/initWithDescriptor:")
+            return nil
+        }
+
+        let allocFn = unsafeBitCast(allocImp, to: AllocFn.self)
+        let initFn = unsafeBitCast(initImp, to: InitFn.self)
+
+        guard let rawAlloc = allocFn(classes.vdClass, allocSel) else {
+            logger.error("alloc returned nil")
+            return nil
+        }
+
+        guard let rawInit = initFn(rawAlloc, initSel, descriptor) else {
+            logger.error("initWithDescriptor: returned nil")
+            return nil
+        }
+
+        // The raw pointer holds a +1 retained object from alloc+init.
+        // Convert to NSObject for use — takeUnretainedValue doesn't change retain count.
+        return Unmanaged<NSObject>.fromOpaque(rawInit).takeUnretainedValue()
+    }
+
+    private static func installVirtualOverride(
+        nativeWidth: Int, nativeHeight: Int,
+        scaledResolutions: [(logical: (Int, Int), backing: (Int, Int), label: String)]
+    ) {
         func encode(_ w: Int, _ h: Int) -> Data {
             var d = Data(count: 16)
-            withUnsafeBytes(of: UInt32(w * 2).bigEndian) { d.replaceSubrange(0..<4, with: $0) }
-            withUnsafeBytes(of: UInt32(h * 2).bigEndian) { d.replaceSubrange(4..<8, with: $0) }
+            withUnsafeBytes(of: UInt32(w).bigEndian) { d.replaceSubrange(0..<4, with: $0) }
+            withUnsafeBytes(of: UInt32(h).bigEndian) { d.replaceSubrange(4..<8, with: $0) }
             withUnsafeBytes(of: UInt32(1).bigEndian) { d.replaceSubrange(8..<12, with: $0) }
             withUnsafeBytes(of: UInt32(0).bigEndian) { d.replaceSubrange(12..<16, with: $0) }
             return d
         }
 
+        var scaleRes: [Data] = scaledResolutions.map { encode($0.backing.0, $0.backing.1) }
+        scaleRes.append(encode(nativeWidth * 2, nativeHeight * 2))
+
         let plist: [String: Any] = [
             "DisplayProductID": 0xFFFE,
             "DisplayVendorID": 0x4C2D,
-            "scale-resolutions": [
-                encode(logicalWidth, logicalHeight),
-                encode(logicalWidth * 3/4, logicalHeight * 3/4),
-                encode(logicalWidth / 2, logicalHeight / 2),
-            ],
+            "scale-resolutions": scaleRes,
         ]
 
         guard let data = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0) else { return }
         let tmp = NSTemporaryDirectory() + "DisplayProductID-fffe"
-        try? data.write(to: URL(fileURLWithPath: tmp))
+        guard let _ = try? data.write(to: URL(fileURLWithPath: tmp)) else { return }
+        defer { try? FileManager.default.removeItem(atPath: tmp) }
 
         let dir = "/Library/Displays/Contents/Resources/Overrides/DisplayVendorID-4c2d"
         let script = "do shell script \"mkdir -p '\(dir)' && cp '\(tmp)' '\(dir)/DisplayProductID-fffe'\" with administrator privileges"
         var err: NSDictionary?
         NSAppleScript(source: script)?.executeAndReturnError(&err)
-        try? FileManager.default.removeItem(atPath: tmp)
     }
 }
