@@ -32,8 +32,9 @@ enum VirtualDisplayManager {
     static func scaledResolutions(nativeWidth: Int, nativeHeight: Int) -> [(logical: (Int, Int), backing: (Int, Int), label: String)] {
         let aspect = Double(nativeWidth) / Double(nativeHeight)
 
+        // Note: native resolution (1440) excluded — VD mirror at native res
+        // causes display scaling issues. Use HiDPI Native for that instead.
         let targets: [(height: Int, label: String)] = [
-            (1440, "Native HiDPI"),
             (1360, "Slightly Scaled"),
             (1280, "Comfortable"),
             (1200, "Medium"),
@@ -167,39 +168,20 @@ enum VirtualDisplayManager {
         let physID = mirroredPhysicalID
 
         if physID != 0 {
-            // Unmirror AND reposition physical display in one transaction
-            // Without repositioning, the physical display stays at the VD's coordinates
-            // which can leave the cursor trapped in a tiny area
-            let primary = CGMainDisplayID()
-            let primaryBounds = CGDisplayBounds(primary)
+            let physMode = CGDisplayCopyDisplayMode(physID)
+            let displayW = Int32(physMode?.width ?? 1920)
+            let displayH = Int32(physMode?.height ?? 1080)
+            let pos = aboveCentered(displayW: displayW, displayH: displayH)
 
             var config: CGDisplayConfigRef?
             if CGBeginDisplayConfiguration(&config) == .success {
-                // Remove mirror
                 CGConfigureDisplayMirrorOfDisplay(config, physID, kCGNullDirectDisplay)
-
-                // Reposition physical display: use saved origin if available,
-                // otherwise center above primary
-                if let origin = savedOrigin {
-                    CGConfigureDisplayOrigin(config, physID, origin.x, origin.y)
-                    logger.info("Restored display to saved position (\(origin.x), \(origin.y))")
-                } else {
-                    // Fallback: center above primary
-                    let physMode = CGDisplayCopyDisplayMode(physID)
-                    let displayW = Int32(physMode?.width ?? 1920)
-                    let displayH = Int32(physMode?.height ?? 1080)
-                    let primaryW = Int32(primaryBounds.width)
-                    let x = (primaryW - displayW) / 2
-                    let y = -displayH
-                    CGConfigureDisplayOrigin(config, physID, x, y)
-                    logger.info("Repositioned display to centered above (\(x), \(y))")
-                }
-
+                CGConfigureDisplayOrigin(config, physID, pos.x, pos.y)
                 CGCompleteDisplayConfiguration(config, .permanently)
+                logger.info("Unmirror + reposition to (\(pos.x), \(pos.y))")
             }
             mirroredPhysicalID = 0
         }
-        savedOrigin = nil
     }
 
     /// Force cleanup: unmirrors all displays mirrored to our virtual displays.
@@ -288,27 +270,20 @@ enum VirtualDisplayManager {
         return applyMode(vDisplayID: vDisplayID, mode: targetMode, physicalDisplayID: physicalDisplayID)
     }
 
-    /// Saved position from before first VD activation, so we can restore it on mode switches
-    private static var savedOrigin: (x: Int32, y: Int32)?
+    private static func aboveCentered(displayW: Int32, displayH: Int32) -> (x: Int32, y: Int32) {
+        let primary = CGMainDisplayID()
+        let primaryBounds = CGDisplayBounds(primary)
+        let primaryW = Int32(primaryBounds.width)
+        let x = (primaryW - displayW) / 2
+        let y = -displayH
+        return (x, y)
+    }
 
     private static func applyMode(
         vDisplayID: CGDirectDisplayID, mode: CGDisplayMode,
         physicalDisplayID: CGDirectDisplayID
     ) -> Result<String, RetinaScalerError> {
-        // First time: save the current position of the physical display or VD
-        if savedOrigin == nil {
-            let bounds: CGRect
-            if CGDisplayIsOnline(vDisplayID) != 0 && CGDisplayBounds(vDisplayID) != .zero {
-                bounds = CGDisplayBounds(vDisplayID)
-            } else {
-                bounds = CGDisplayBounds(physicalDisplayID)
-            }
-            savedOrigin = (x: Int32(bounds.origin.x), y: Int32(bounds.origin.y))
-            logger.info("Saved display origin: (\(savedOrigin!.x), \(savedOrigin!.y))")
-        }
-
-        let posX = savedOrigin!.x
-        let posY = savedOrigin!.y
+        let pos = aboveCentered(displayW: Int32(mode.width), displayH: Int32(mode.height))
 
         var config: CGDisplayConfigRef?
         guard CGBeginDisplayConfiguration(&config) == .success else {
@@ -317,7 +292,7 @@ enum VirtualDisplayManager {
 
         CGConfigureDisplayMirrorOfDisplay(config, physicalDisplayID, vDisplayID)
         CGConfigureDisplayWithDisplayMode(config, vDisplayID, mode, nil)
-        CGConfigureDisplayOrigin(config, vDisplayID, posX, posY)
+        CGConfigureDisplayOrigin(config, vDisplayID, pos.x, pos.y)
 
         guard CGCompleteDisplayConfiguration(config, .permanently) == .success else {
             return .failure(.modeSwitchFailed)
@@ -326,7 +301,7 @@ enum VirtualDisplayManager {
         mirroredPhysicalID = physicalDisplayID
 
         let hz = Int(mode.refreshRate)
-        logger.info("HiDPI mode set: \(mode.width)x\(mode.height) @ \(hz)Hz at position (\(posX),\(posY))")
+        logger.info("HiDPI mode set: \(mode.width)x\(mode.height) @ \(hz)Hz at position (\(pos.x),\(pos.y))")
         return .success("\(mode.width)×\(mode.height) HiDPI @ \(hz)Hz active")
     }
 
