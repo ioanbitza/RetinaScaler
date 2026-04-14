@@ -70,7 +70,11 @@ struct MenuBarView: View {
     private var settingsCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Settings header
-            DisclosureGroup {
+            TappableSection {
+                Label("Settings", systemImage: "gear")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+            } content: {
                 VStack(alignment: .leading, spacing: 0) {
                     SectionDivider()
 
@@ -92,7 +96,6 @@ struct MenuBarView: View {
                         }
                     }
 
-                    // Keyboard shortcut hints
                     HStack(spacing: 8) {
                         shortcutHint("^⌥H", label: "HiDPI")
                         shortcutHint("^⌥R", label: "HDR")
@@ -102,10 +105,6 @@ struct MenuBarView: View {
                     .padding(.horizontal, MenuTheme.rowHorizontal)
                     .padding(.vertical, 6)
                 }
-            } label: {
-                Label("Settings", systemImage: "gear")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.primary)
             }
             .padding(.horizontal, MenuTheme.cardPadding)
             .padding(.vertical, 8)
@@ -354,13 +353,7 @@ struct DisplaySection: View {
 
         // Native HiDPI section
         if !nativeHiDPI.isEmpty {
-            DisclosureGroup {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(nativeHiDPI) { mode in
-                        hiDPIRow(mode, isVirtual: false)
-                    }
-                }
-            } label: {
+            TappableSection {
                 HStack(spacing: 6) {
                     Label("HiDPI Native", systemImage: "sparkles")
                         .font(.system(size: 12, weight: .medium))
@@ -371,6 +364,12 @@ struct DisplaySection: View {
                         .padding(.vertical, 2)
                         .background(Color.cyan.opacity(0.12), in: Capsule())
                 }
+            } content: {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(nativeHiDPI) { mode in
+                        hiDPIRow(mode, isVirtual: false)
+                    }
+                }
             }
             .padding(.horizontal, MenuTheme.rowHorizontal)
             .padding(.vertical, MenuTheme.rowVertical)
@@ -380,13 +379,7 @@ struct DisplaySection: View {
         if !virtualResolutions.isEmpty {
             SectionDivider()
 
-            DisclosureGroup {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(virtualResolutions.enumerated()), id: \.offset) { _, res in
-                        virtualHiDPIRow(logW: res.logical.0, logH: res.logical.1, label: res.label)
-                    }
-                }
-            } label: {
+            TappableSection {
                 HStack(spacing: 6) {
                     Label("HiDPI Virtual Display", systemImage: "display.and.arrow.down")
                         .font(.system(size: 12, weight: .medium))
@@ -397,6 +390,12 @@ struct DisplaySection: View {
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
                             .background(.green.opacity(0.15), in: Capsule())
+                    }
+                }
+            } content: {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(virtualResolutions.enumerated()), id: \.offset) { _, res in
+                        virtualHiDPIRow(logW: res.logical.0, logH: res.logical.1, label: res.label)
                     }
                 }
             }
@@ -502,7 +501,10 @@ struct DisplaySection: View {
     // MARK: - Per-Display Tools
 
     private var displayToolsSection: some View {
-        DisclosureGroup {
+        TappableSection {
+            Label("Tools", systemImage: "wrench.and.screwdriver")
+                .font(.system(size: 12, weight: .medium))
+        } content: {
             VStack(alignment: .leading, spacing: 0) {
                 if !display.isBuiltIn {
                     MenuRow("Arrangement") {
@@ -526,9 +528,6 @@ struct DisplaySection: View {
                     }
                 }
             }
-        } label: {
-            Label("Tools", systemImage: "wrench.and.screwdriver")
-                .font(.system(size: 12, weight: .medium))
         }
         .padding(.horizontal, MenuTheme.cardPadding)
         .padding(.vertical, 6)
@@ -553,7 +552,10 @@ struct DisplaySection: View {
             .filter { !$0.isHiDPI && $0.width >= minWidth && $0.height >= minHeight }
             .sorted { $0.width > $1.width })
 
-        return DisclosureGroup {
+        return TappableSection {
+            Label("Resolutions", systemImage: "rectangle.split.3x1")
+                .font(.system(size: 12, weight: .medium))
+        } content: {
             VStack(alignment: .leading, spacing: 2) {
                 if !hiDPIModes.isEmpty {
                     resolutionGroupHeader("HiDPI", color: MenuTheme.accentHiDPI, icon: "sparkles")
@@ -573,9 +575,6 @@ struct DisplaySection: View {
                 }
             }
             .padding(.vertical, 4)
-        } label: {
-            Label("Resolutions", systemImage: "rectangle.split.3x1")
-                .font(.system(size: 12, weight: .medium))
         }
         .padding(.horizontal, MenuTheme.cardPadding)
         .padding(.vertical, 6)
@@ -1031,5 +1030,44 @@ struct SliderRow: View {
         }
         .padding(.horizontal, MenuTheme.rowHorizontal)
         .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Tappable Disclosure Group
+
+/// A DisclosureGroup where tapping anywhere on the header toggles expansion,
+/// not just the tiny chevron.
+struct TappableSection<Label: View, Content: View>: View {
+    @State private var isExpanded: Bool
+    let label: Label
+    let content: () -> Content
+
+    init(expanded: Bool = false, @ViewBuilder label: () -> Label, @ViewBuilder content: @escaping () -> Content) {
+        _isExpanded = State(initialValue: expanded)
+        self.label = label()
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+            } label: {
+                HStack {
+                    label
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                content()
+            }
+        }
     }
 }
