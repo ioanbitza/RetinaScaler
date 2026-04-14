@@ -114,6 +114,14 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: zip -r "RetinaScaler-${VERSION}.zip" RetinaScaler.app
 
+      - name: Generate checksums
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          shasum -a 256 "RetinaScaler-${VERSION}.dmg" > "checksums-${VERSION}.txt"
+          shasum -a 256 "RetinaScaler-${VERSION}.zip" >> "checksums-${VERSION}.txt"
+          cat "checksums-${VERSION}.txt"
+
       - name: Create tag
         env:
           TAG: ${{ steps.version.outputs.tag }}
@@ -133,3 +141,4 @@ jobs:
           files: |
             RetinaScaler-*.dmg
             RetinaScaler-*.zip
+            checksums-*.txt
