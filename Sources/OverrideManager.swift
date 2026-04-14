@@ -5,36 +5,8 @@ private let logger = Logger(subsystem: "com.astralbyte.retinascaler", category: 
 
 enum OverrideManager {
 
-    /// Default HiDPI resolutions for ultrawide 5120x1440 panels.
-    /// Includes fine-grained steps between 1080p and 1440p height for user preference.
-    static let defaultUltrawide5120x1440: [HiDPIResolution] = [
-        // Full range from native down to 1080p, maintaining 32:9 aspect ratio
-        HiDPIResolution(logicalWidth: 5120, logicalHeight: 1440, label: "Native HiDPI"),
-        HiDPIResolution(logicalWidth: 4836, logicalHeight: 1360, label: "Slightly Scaled"),
-        HiDPIResolution(logicalWidth: 4552, logicalHeight: 1280, label: "Comfortable"),
-        HiDPIResolution(logicalWidth: 4266, logicalHeight: 1200, label: "Medium"),
-        HiDPIResolution(logicalWidth: 3982, logicalHeight: 1120, label: "Compact"),
-        HiDPIResolution(logicalWidth: 3840, logicalHeight: 1080, label: "1080p HiDPI"),
-        // Below 1080p
-        HiDPIResolution(logicalWidth: 3360, logicalHeight: 946, label: "Large UI"),
-        HiDPIResolution(logicalWidth: 3200, logicalHeight: 900, label: "Larger UI"),
-        HiDPIResolution(logicalWidth: 3008, logicalHeight: 846, label: "Extra Large"),
-        HiDPIResolution(logicalWidth: 2560, logicalHeight: 720, label: "1:1 Retina"),
-    ]
-
-    /// Common presets for other panel resolutions
-    static let default4K3840x2160: [HiDPIResolution] = [
-        HiDPIResolution(logicalWidth: 3840, logicalHeight: 2160, label: "Native HiDPI"),
-        HiDPIResolution(logicalWidth: 3008, logicalHeight: 1692, label: "Default scaled"),
-        HiDPIResolution(logicalWidth: 2560, logicalHeight: 1440, label: "More space"),
-        HiDPIResolution(logicalWidth: 1920, logicalHeight: 1080, label: "1:1 Retina, biggest UI"),
-    ]
-
-    static let default1440p2560x1440: [HiDPIResolution] = [
-        HiDPIResolution(logicalWidth: 2560, logicalHeight: 1440, label: "Native HiDPI"),
-        HiDPIResolution(logicalWidth: 1920, logicalHeight: 1080, label: "Comfortable HiDPI"),
-        HiDPIResolution(logicalWidth: 1280, logicalHeight: 720, label: "1:1 Retina, biggest UI"),
-    ]
+    // No hardcoded presets — all resolutions are generated dynamically
+    // from the display's native resolution in suggestedResolutions(for:)
 
     // MARK: - Plist Generation
 
@@ -81,24 +53,30 @@ enum OverrideManager {
 
     // MARK: - Suggested Resolutions
 
+    /// Generates HiDPI resolutions dynamically from the display's native resolution.
+    /// Works with any monitor — ultrawides, 4K, 1440p, 1080p, any aspect ratio.
     static func suggestedResolutions(for display: ExternalDisplay) -> [HiDPIResolution] {
         let w = display.nativeWidth
         let h = display.nativeHeight
+        let aspect = Double(w) / Double(h)
 
-        // Match known panel sizes
-        if w == 5120 && h == 1440 { return defaultUltrawide5120x1440 }
-        if w == 3840 && h == 2160 { return default4K3840x2160 }
-        if w == 2560 && h == 1440 { return default1440p2560x1440 }
+        // Generate a range of scaled resolutions from 100% down to 50% of native
+        let scales: [(pct: Double, label: String)] = [
+            (1.00, "Native HiDPI"),
+            (0.945, "Slightly Scaled"),
+            (0.89, "Comfortable"),
+            (0.835, "Medium"),
+            (0.78, "Compact"),
+            (0.75, "Most Scaled"),
+            (0.66, "Large UI"),
+            (0.50, "1:1 Retina"),
+        ]
 
-        // Generic: offer native HiDPI + a few scaled options
-        var resolutions = [HiDPIResolution(logicalWidth: w, logicalHeight: h, label: "Native HiDPI")]
-        let scales: [(Double, String)] = [(0.8, "Slightly larger UI"), (0.6, "Large UI"), (0.5, "1:1 Retina")]
-        for (scale, label) in scales {
-            let sw = Int(Double(w) * scale / 2) * 2  // keep even
-            let sh = Int(Double(h) * scale / 2) * 2
-            resolutions.append(HiDPIResolution(logicalWidth: sw, logicalHeight: sh, label: label))
+        return scales.map { scale in
+            let logH = Int(round(Double(h) * scale.pct / 2.0)) * 2
+            let logW = Int(round(Double(logH) * aspect / 2.0)) * 2
+            return HiDPIResolution(logicalWidth: logW, logicalHeight: logH, label: scale.label)
         }
-        return resolutions
     }
 
     // MARK: - Install / Remove

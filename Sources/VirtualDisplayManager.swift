@@ -32,20 +32,22 @@ enum VirtualDisplayManager {
     static func scaledResolutions(nativeWidth: Int, nativeHeight: Int) -> [(logical: (Int, Int), backing: (Int, Int), label: String)] {
         let aspect = Double(nativeWidth) / Double(nativeHeight)
 
-        // Note: native resolution (1440) excluded — VD mirror at native res
-        // causes display scaling issues. Use HiDPI Native for that instead.
-        let targets: [(height: Int, label: String)] = [
-            (1360, "Slightly Scaled"),
-            (1280, "Comfortable"),
-            (1200, "Medium"),
-            (1120, "Compact"),
-            (1080, "Most Scaled"),
+        // Generate scaled resolutions as percentages of native height
+        // From 100% (native HiDPI) down to 75%, maintaining aspect ratio
+        let scales: [(pct: Double, label: String)] = [
+            (1.00, "Native HiDPI"),
+            (0.945, "Slightly Scaled"),
+            (0.89, "Comfortable"),
+            (0.835, "Medium"),
+            (0.78, "Compact"),
+            (0.75, "Most Scaled"),
         ]
 
-        return targets.map { target in
-            let logH = target.height
+        return scales.map { scale in
+            // Round to nearest 2 for pixel alignment
+            let logH = Int(round(Double(nativeHeight) * scale.pct / 2.0)) * 2
             let logW = Int(round(Double(logH) * aspect / 2.0)) * 2
-            return (logical: (logW, logH), backing: (logW * 2, logH * 2), label: target.label)
+            return (logical: (logW, logH), backing: (logW * 2, logH * 2), label: scale.label)
         }
     }
 
