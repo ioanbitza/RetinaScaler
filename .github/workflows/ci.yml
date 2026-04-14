@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [development]
+    branches: [develop, 'release/*', 'hotfix/*']
   pull_request:
-    branches: [main]
+    branches: [develop, main]
 
 jobs:
   build:
@@ -13,7 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build
+      - name: Resolve dependencies
+        run: swift package resolve
+
+      - name: Build Debug
         run: swift build
 
       - name: Build Release
