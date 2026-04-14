@@ -61,11 +61,10 @@ enum DisplayArrangement {
 
     /// Common arrangements relative to primary display.
     enum Preset: String, CaseIterable {
-        case leftOf = "Left of primary"
-        case rightOf = "Right of primary"
-        case above = "Above primary"
-        case below = "Below primary"
-        case centered = "Centered above"
+        case leftOf = "Left (centered)"
+        case rightOf = "Right (centered)"
+        case above = "Above (centered)"
+        case below = "Below (centered)"
     }
 
     static func applyPreset(_ preset: Preset, displayID: CGDirectDisplayID) -> Bool {
@@ -107,8 +106,6 @@ enum DisplayArrangement {
             ((primaryW - displayW) / 2, -displayH)
         case .below:
             ((primaryW - displayW) / 2, primaryH)
-        case .centered:
-            ((primaryW - displayW) / 2, -displayH)
         }
 
         return setPosition(displayID: targetID, x: x, y: y)
