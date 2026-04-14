@@ -117,17 +117,16 @@ enum VirtualDisplayManager {
 
         let maxHz = maxRefreshRate(for: physicalDisplayID)
         let refreshRates = Array(Set([60.0, 120.0, maxHz])).sorted()
-        let allScaled = scaledResolutions(nativeWidth: nativeWidth, nativeHeight: nativeHeight)
 
-        // Build modes for ALL resolutions
+        // Build VD modes: the target resolution + native, at all refresh rates
+        // Use the passed-in dimensions directly (not re-queried, which would
+        // return VD dimensions when mirror is active)
         var modeSpecs: [(UInt32, UInt32, Double)] = []
-        for res in allScaled {
-            for hz in refreshRates {
-                modeSpecs.append((UInt32(res.backing.0), UInt32(res.backing.1), hz))
-                modeSpecs.append((UInt32(res.logical.0), UInt32(res.logical.1), hz))
-            }
-        }
+        let backW = UInt32(targetLogW * 2)
+        let backH = UInt32(targetLogH * 2)
         for hz in refreshRates {
+            modeSpecs.append((backW, backH, hz))
+            modeSpecs.append((UInt32(targetLogW), UInt32(targetLogH), hz))
             modeSpecs.append((UInt32(nativeWidth * 2), UInt32(nativeHeight * 2), hz))
             modeSpecs.append((UInt32(nativeWidth), UInt32(nativeHeight), hz))
         }
@@ -148,8 +147,8 @@ enum VirtualDisplayManager {
         }
 
         // First time — create the virtual display
-        let maxBackW = UInt32(allScaled.map { $0.backing.0 }.max()! )
-        let maxBackH = UInt32(allScaled.map { $0.backing.1 }.max()!)
+        let maxBackW = UInt32(max(nativeWidth * 2, targetLogW * 2))
+        let maxBackH = UInt32(max(nativeHeight * 2, targetLogH * 2))
 
         let physWidth = CGDisplayScreenSize(physicalDisplayID).width
         let physHeight = CGDisplayScreenSize(physicalDisplayID).height
@@ -187,7 +186,8 @@ enum VirtualDisplayManager {
         vd.perform(NSSelectorFromString("applySettings:"), with: settings)
 
         // Install override plist for the virtual display
-        installVirtualOverride(nativeWidth: nativeWidth, nativeHeight: nativeHeight, scaledResolutions: allScaled)
+        let targetRes = [(logical: (targetLogW, targetLogH), backing: (targetLogW * 2, targetLogH * 2), label: "")]
+        installVirtualOverride(nativeWidth: nativeWidth, nativeHeight: nativeHeight, scaledResolutions: targetRes)
 
         usleep(500_000)
 
