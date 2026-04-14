@@ -13,6 +13,10 @@ Most external monitors have a pixel density below 210 PPI — the threshold Appl
 
 Works with any external monitor — ultrawides, 4K, 1440p, 1080p, any refresh rate.
 
+<p align="center">
+  <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.0.dmg"><strong>Download RetinaScaler.dmg</strong></a> · <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.0.zip">ZIP</a> · <a href="https://github.com/ioanbitza/RetinaScaler/releases">All Releases</a>
+</p>
+
 ---
 
 ## Why You Need This
@@ -114,15 +118,7 @@ RetinaScaler lives in your menu bar. Click the icon to open the control panel. E
 
 ---
 
-## Download
-
-**[Download Latest Release](https://github.com/ioanbitza/RetinaScaler/releases/latest)**
-
-Available as `.dmg` (drag to Applications) or `.zip`.
-
-Each release includes SHA-256 checksums for verification.
-
-### Installation
+## Installation
 
 1. Download `RetinaScaler-x.x.x.dmg` from Releases
 2. Open the DMG and drag **RetinaScaler** to your Applications folder

@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RetinaScaler — Retina-quality text on every monitor</title>
+<meta name="description" content="Free, open-source macOS app that enables HiDPI Retina scaling on external monitors. Sharp text, per-display controls, 240Hz support.">
+<meta property="og:title" content="RetinaScaler">
+<meta property="og:description" content="Retina-quality text on every external monitor. Free and open-source for macOS.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+
+:root {
+  --bg: #06060b;
+  --bg-card: #0d0d16;
+  --bg-card-hover: #12121f;
+  --border: rgba(123,104,238,0.12);
+  --border-hover: rgba(0,245,212,0.25);
+  --text: #e8e6f0;
+  --text-dim: #8b87a0;
+  --text-muted: #5a5672;
+  --accent: #00f5d4;
+  --accent2: #7b68ee;
+  --accent3: #9b59b6;
+  --serif: 'Instrument Serif', Georgia, serif;
+  --sans: 'Outfit', -apple-system, sans-serif;
+  --max-w: 1120px;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Noise texture overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--accent2); border-radius: 3px; }
+
+a { color: var(--accent); text-decoration: none; transition: opacity 0.2s; }
+a:hover { opacity: 0.8; }
+
+.container { max-width: var(--max-w); margin: 0 auto; padding: 0 24px; }
+
+/* ─── NAV ─── */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(6,6,11,0.8);
+  backdrop-filter: blur(20px) saturate(1.4);
+  border-bottom: 1px solid var(--border);
+}
+nav .container {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 60px;
+}
+.nav-logo {
+  font-family: var(--serif);
+  font-size: 1.4rem;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+.nav-logo span { color: var(--accent); }
+.nav-links { display: flex; gap: 28px; align-items: center; }
+.nav-links a { color: var(--text-dim); font-size: 0.88rem; font-weight: 400; transition: color 0.2s; }
+.nav-links a:hover { color: var(--text); opacity: 1; }
+.nav-cta {
+  background: var(--accent);
+  color: var(--bg) !important;
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.nav-cta:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,245,212,0.3); opacity: 1 !important; }
+
+/* ─── HERO ─── */
+.hero {
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  text-align: center;
+  position: relative;
+  padding: 120px 24px 80px;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -20%; left: 50%; transform: translateX(-50%);
+  width: 800px; height: 800px;
+  background: radial-gradient(circle, rgba(123,104,238,0.08) 0%, rgba(0,245,212,0.04) 40%, transparent 70%);
+  pointer-events: none;
+}
+/* Animated eye decoration */
+.hero-eye {
+  width: 120px; height: 60px;
+  margin: 0 auto 40px;
+  position: relative;
+}
+.hero-eye::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--accent2);
+  border-radius: 50% / 100%;
+  opacity: 0.5;
+  animation: eyePulse 3s ease-in-out infinite;
+}
+.hero-eye::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%; transform: translate(-50%,-50%);
+  width: 28px; height: 28px;
+  background: radial-gradient(circle, var(--accent) 0%, var(--accent2) 60%, transparent 100%);
+  border-radius: 50%;
+  animation: irisPulse 3s ease-in-out infinite;
+}
+@keyframes eyePulse { 0%,100%{opacity:0.3;transform:scaleX(1)} 50%{opacity:0.6;transform:scaleX(1.05)} }
+@keyframes irisPulse { 0%,100%{transform:translate(-50%,-50%) scale(1)} 50%{transform:translate(-50%,-50%) scale(1.15)} }
+
+.hero h1 {
+  font-family: var(--serif);
+  font-size: clamp(3rem, 7vw, 5.5rem);
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  margin-bottom: 20px;
+}
+.hero h1 em {
+  font-style: italic;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.hero-sub {
+  font-size: 1.15rem;
+  color: var(--text-dim);
+  max-width: 520px;
+  margin: 0 auto 44px;
+  font-weight: 300;
+  line-height: 1.7;
+}
+.hero-actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 14px 32px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.25s;
+  border: none; cursor: pointer;
+}
+.btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,245,212,0.3); opacity: 1; }
+.btn-ghost {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover { border-color: var(--border-hover); color: var(--text); opacity: 1; }
+.hero-meta {
+  margin-top: 48px;
+  display: flex; gap: 32px; justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+.hero-meta span { display: flex; align-items: center; gap: 6px; }
+
+/* ─── SECTIONS ─── */
+section { padding: 100px 0; position: relative; }
+.section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent2);
+  margin-bottom: 16px;
+}
+.section-title {
+  font-family: var(--serif);
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin-bottom: 20px;
+}
+.section-desc {
+  color: var(--text-dim);
+  font-size: 1.05rem;
+  max-width: 600px;
+  font-weight: 300;
+  line-height: 1.7;
+}
+
+/* ─── PROBLEM ─── */
+.problem { border-top: 1px solid var(--border); }
+.problem-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 48px;
+}
+.problem-card {
+  padding: 36px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  transition: border-color 0.3s;
+}
+.problem-card:hover { border-color: var(--border-hover); }
+.problem-card.before { }
+.problem-card.after { border-color: rgba(0,245,212,0.2); }
+.problem-card h3 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 16px;
+}
+.problem-card.before h3 { color: var(--text-muted); }
+.problem-card.after h3 { color: var(--accent); }
+.problem-card ul { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.problem-card li {
+  font-size: 0.95rem;
+  color: var(--text-dim);
+  padding-left: 20px;
+  position: relative;
+}
+.problem-card.before li::before { content: ''; position: absolute; left: 0; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
+.problem-card.after li::before { content: ''; position: absolute; left: 0; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.problem-card.after li { color: var(--text); }
+
+/* ─── HOW IT WORKS ─── */
+.how { border-top: 1px solid var(--border); }
+.how-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 48px;
+}
+.how-card {
+  padding: 40px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.3s, transform 0.3s;
+}
+.how-card:hover { border-color: var(--border-hover); transform: translateY(-2px); }
+.how-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+.how-card:first-child::before { background: linear-gradient(90deg, var(--accent), transparent); }
+.how-card:last-child::before { background: linear-gradient(90deg, var(--accent2), transparent); }
+.how-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+}
+.how-card:first-child .how-badge { background: rgba(0,245,212,0.1); color: var(--accent); }
+.how-card:last-child .how-badge { background: rgba(123,104,238,0.1); color: var(--accent2); }
+.how-card h3 {
+  font-family: var(--serif);
+  font-size: 1.6rem;
+  margin-bottom: 12px;
+}
+.how-card p {
+  color: var(--text-dim);
+  font-size: 0.95rem;
+  line-height: 1.7;
+  font-weight: 300;
+}
+.how-card .tag-row {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-top: 20px;
+}
+.tag {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+  color: var(--text-muted);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+/* ─── FEATURES ─── */
+.features { border-top: 1px solid var(--border); }
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 48px;
+}
+.feature {
+  padding: 28px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  transition: border-color 0.3s, transform 0.2s;
+}
+.feature:hover { border-color: var(--border-hover); transform: translateY(-2px); }
+.feature-icon {
+  font-size: 1.6rem;
+  margin-bottom: 14px;
+  display: block;
+}
+.feature h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.feature p {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  font-weight: 300;
+  line-height: 1.6;
+}
+
+/* ─── DOWNLOAD ─── */
+.download {
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+.download-box {
+  max-width: 560px;
+  margin: 48px auto 0;
+  padding: 48px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  position: relative;
+  overflow: hidden;
+}
+.download-box::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2), var(--accent));
+}
+.download-box .btn { width: 100%; justify-content: center; margin-bottom: 20px; font-size: 1.05rem; padding: 16px; }
+.download-reqs {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.8;
+}
+.gatekeeper {
+  margin-top: 24px;
+  padding: 16px 20px;
+  border-radius: 10px;
+  background: rgba(123,104,238,0.06);
+  border: 1px solid rgba(123,104,238,0.12);
+  text-align: left;
+}
+.gatekeeper summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.gatekeeper p {
+  margin-top: 10px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+/* ─── DONATE ─── */
+.donate { border-top: 1px solid var(--border); text-align: center; }
+.donate-desc {
+  color: var(--text-dim);
+  font-size: 1.05rem;
+  max-width: 520px;
+  margin: 0 auto 40px;
+  font-weight: 300;
+}
+.donate-buttons {
+  display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;
+}
+.donate-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 24px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  transition: all 0.25s;
+}
+.donate-btn:hover { border-color: var(--border-hover); color: var(--text); transform: translateY(-1px); opacity: 1; }
+
+/* ─── FOOTER ─── */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 40px 0;
+  text-align: center;
+}
+footer p {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+footer a { color: var(--text-dim); }
+
+/* ─── ANIMATIONS ─── */
+.fade-in {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.fade-in.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ─── RESPONSIVE ─── */
+@media (max-width: 768px) {
+  .problem-grid, .how-cards { grid-template-columns: 1fr; }
+  .features-grid { grid-template-columns: 1fr 1fr; }
+  .nav-links a:not(.nav-cta) { display: none; }
+  .hero-meta { flex-direction: column; gap: 12px; }
+  section { padding: 64px 0; }
+}
+@media (max-width: 480px) {
+  .features-grid { grid-template-columns: 1fr; }
+  .hero-actions { flex-direction: column; align-items: center; }
+  .donate-buttons { flex-direction: column; align-items: center; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="container">
+    <a href="#" class="nav-logo">Retina<span>Scaler</span></a>
+    <div class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#download">Download</a>
+      <a href="https://github.com/ioanbitza/RetinaScaler" target="_blank">GitHub</a>
+      <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.0.dmg" class="nav-cta">Download .dmg</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-eye"></div>
+    <h1>Retina-quality text<br>on <em>every</em> monitor</h1>
+    <p class="hero-sub">Free, open-source macOS utility that unlocks HiDPI scaling on external monitors where Apple won't. Sharp text, smooth UI, zero compromise.</p>
+    <div class="hero-actions">
+      <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.0.dmg" class="btn btn-primary">Download for macOS</a>
+      <a href="https://github.com/ioanbitza/RetinaScaler" target="_blank" class="btn btn-ghost">View on GitHub</a>
+    </div>
+    <div class="hero-meta">
+      <span>macOS 14+</span>
+      <span>Apple Silicon &amp; Intel</span>
+      <span>MIT License</span>
+      <span>~3K lines of Swift</span>
+    </div>
+  </div>
+</section>
+
+<!-- PROBLEM -->
+<section class="problem" id="problem">
+  <div class="container">
+    <p class="section-label">The Problem</p>
+    <h2 class="section-title">Your external monitor deserves better</h2>
+    <p class="section-desc">Most external monitors have a pixel density below 210 PPI. macOS refuses to offer HiDPI scaling on these panels, making text look noticeably softer than on your MacBook's Retina display.</p>
+    <div class="problem-grid fade-in">
+      <div class="problem-card before">
+        <h3>Without RetinaScaler</h3>
+        <ul>
+          <li>Fuzzy text on external displays</li>
+          <li>Pixel-visible edges and aliased fonts</li>
+          <li>Only standard resolution modes available</li>
+          <li>Display settings scattered across System Settings</li>
+        </ul>
+      </div>
+      <div class="problem-card after">
+        <h3>With RetinaScaler</h3>
+        <ul>
+          <li>Retina-quality text on all connected displays</li>
+          <li>Smooth, crisp 2x rendering on every element</li>
+          <li>Full range of HiDPI scaled resolutions</li>
+          <li>Unified menu bar panel for all monitors</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="how" id="how">
+  <div class="container">
+    <p class="section-label">How It Works</p>
+    <h2 class="section-title">Two approaches, one goal</h2>
+    <p class="section-desc">RetinaScaler uses two complementary methods to enable HiDPI. Choose the one that fits your workflow.</p>
+    <div class="how-cards fade-in">
+      <div class="how-card">
+        <span class="how-badge">Recommended</span>
+        <h3>HiDPI Native</h3>
+        <p>Installs a display override that tells macOS your monitor supports HiDPI modes. Modes appear directly on the physical display at full refresh rate with zero overhead. One-time admin password, then it just works.</p>
+        <div class="tag-row">
+          <span class="tag">Full refresh rate</span>
+          <span class="tag">Zero overhead</span>
+          <span class="tag">Native macOS</span>
+        </div>
+      </div>
+      <div class="how-card">
+        <span class="how-badge">Advanced</span>
+        <h3>HiDPI Virtual Display</h3>
+        <p>Creates a virtual display with higher backing resolution and mirrors your physical monitor to it. Enables any HiDPI resolution regardless of panel limitations. Best for resolutions that exceed native HiDPI capability.</p>
+        <div class="tag-row">
+          <span class="tag">Any resolution</span>
+          <span class="tag">Virtual mirror</span>
+          <span class="tag">Higher backing</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="features" id="features">
+  <div class="container">
+    <p class="section-label">Features</p>
+    <h2 class="section-title">Everything in one menu</h2>
+    <p class="section-desc">Per-display controls for resolution, refresh rate, brightness, and more. No extra apps needed.</p>
+    <div class="features-grid fade-in">
+      <div class="feature">
+        <span class="feature-icon">&#10024;</span>
+        <h3>HiDPI Scaling</h3>
+        <p>Native and Virtual Display modes with automatic resolution detection for any external monitor.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">&#9635;</span>
+        <h3>Resolution Picker</h3>
+        <p>Per-display resolution switching with HiDPI and standard modes, sorted by size.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">&#9889;</span>
+        <h3>Refresh Rate</h3>
+        <p>Quick-switch between all supported rates. 60Hz, 120Hz, 144Hz, 240Hz — whatever your monitor offers.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">&#9728;</span>
+        <h3>Brightness &amp; Contrast</h3>
+        <p>Hardware-level DDC/CI control. Adjusts your monitor's actual backlight over DisplayPort or HDMI.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">&#127752;</span>
+        <h3>HDR Toggle</h3>
+        <p>Enable or disable HDR on supported displays with a single click.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">&#127769;</span>
+        <h3>Night Shift</h3>
+        <p>System-wide blue light reduction toggle, accessible from the same panel.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">&#9000;</span>
+        <h3>Keyboard Shortcuts</h3>
+        <p>Global hotkeys for HiDPI, HDR, brightness, and refresh rate. Ctrl+Opt combinations.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">&#9638;</span>
+        <h3>Display Arrangement</h3>
+        <p>Quick presets to position displays relative to each other: left, right, above, below.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">&#9881;</span>
+        <h3>Menu Bar App</h3>
+        <p>Lives in your menu bar. Dark-mode card-based UI with per-display independent controls.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DOWNLOAD -->
+<section class="download" id="download">
+  <div class="container">
+    <p class="section-label">Download</p>
+    <h2 class="section-title">Ready to try?</h2>
+    <div class="download-box fade-in">
+      <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.0.dmg" class="btn btn-primary">Download RetinaScaler.dmg</a>
+      <div class="download-reqs">
+        macOS 14.0 (Sonoma) or later<br>
+        Apple Silicon or Intel Mac<br>
+        External monitor via DisplayPort, HDMI, or USB-C<br><br>
+        <a href="https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.0.zip">Download ZIP</a> &middot; <a href="https://github.com/ioanbitza/RetinaScaler/releases">All Releases</a>
+      </div>
+      <details class="gatekeeper">
+        <summary>macOS blocks the app on first launch?</summary>
+        <p>Since RetinaScaler is ad-hoc signed (not Apple-notarized), Gatekeeper will block it once. Right-click the app &gt; Open, or go to System Settings &gt; Privacy &amp; Security &gt; Open Anyway. This is only needed once.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- DONATE -->
+<section class="donate" id="donate">
+  <div class="container">
+    <p class="section-label">Support</p>
+    <h2 class="section-title">Like what you see?</h2>
+    <p class="donate-desc">RetinaScaler is free and open-source. If it improved your display experience, consider supporting development.</p>
+    <div class="donate-buttons fade-in">
+      <a href="https://github.com/sponsors/ioanbitza" target="_blank" class="donate-btn">&#10084;&#65039; GitHub Sponsors</a>
+      <a href="https://buymeacoffee.com/ioanbitza" target="_blank" class="donate-btn">&#9749; Buy Me a Coffee</a>
+      <a href="https://ko-fi.com/ioanbitza" target="_blank" class="donate-btn">&#127861; Ko-fi</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <p>Made by <a href="https://github.com/ioanbitza">Ioan Bitza</a> &middot; <a href="https://github.com/ioanbitza">ASTRALBYTE</a> &middot; <a href="https://github.com/ioanbitza/RetinaScaler">GitHub</a> &middot; MIT License</p>
+  </div>
+</footer>
+
+<!-- Scroll reveal -->
+<script>
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); obs.unobserve(e.target); }});
+}, { threshold: 0.15 });
+document.querySelectorAll('.fade-in').forEach(el => obs.observe(el));
+</script>
+
+</body>
+</html>
