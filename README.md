@@ -116,9 +116,7 @@ RetinaScaler lives in your menu bar. Click the icon to open the control panel. E
 
 ## Download
 
-**[Download Latest Release](https://github.com/ioanbitza/RetinaScaler/releases/latest)**
-
-Available as `.dmg` (drag to Applications) or `.zip`.
+**[Download RetinaScaler.dmg](https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.0.dmg)** · [ZIP](https://github.com/ioanbitza/RetinaScaler/releases/latest/download/RetinaScaler-1.0.0.zip) · [All Releases](https://github.com/ioanbitza/RetinaScaler/releases)
 
 Each release includes SHA-256 checksums for verification.
 
