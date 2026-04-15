@@ -16,10 +16,12 @@ class DisplayManager {
     private(set) var perDisplayModes: [CGDirectDisplayID: [DisplayModeInfo]] = [:]
     private(set) var perDisplayCurrentMode: [CGDirectDisplayID: DisplayModeInfo] = [:]
 
-    // DDC state per display
+    // Brightness state per display
     private(set) var perDisplayBrightness: [CGDirectDisplayID: Int] = [:]
     private(set) var perDisplayContrast: [CGDirectDisplayID: Int] = [:]
-    private(set) var perDisplayDDCAvailable: [CGDirectDisplayID: Bool] = [:]
+    private(set) var perDisplayBrightnessAvailable: [CGDirectDisplayID: Bool] = [:]
+    /// Tracks whether external display uses DDC (true) or gamma fallback (false)
+    private(set) var perDisplayUsesDDC: [CGDirectDisplayID: Bool] = [:]
 
     // Night Shift (system-wide, not per-display)
     var nightShiftEnabled = false
@@ -65,9 +67,9 @@ class DisplayManager {
         return perDisplayContrast[d.id] ?? -1
     }
 
-    var ddcAvailable: Bool {
+    var brightnessAvailable: Bool {
         guard let d = selectedDisplay else { return false }
-        return perDisplayDDCAvailable[d.id] ?? false
+        return perDisplayBrightnessAvailable[d.id] ?? false
     }
 
     var hdrEnabled: Bool {
@@ -102,8 +104,8 @@ class DisplayManager {
         perDisplayContrast[displayID] ?? -1
     }
 
-    func isDDCAvailable(for displayID: CGDirectDisplayID) -> Bool {
-        perDisplayDDCAvailable[displayID] ?? false
+    func isBrightnessAvailable(for displayID: CGDirectDisplayID) -> Bool {
+        perDisplayBrightnessAvailable[displayID] ?? false
     }
 
     func isHDREnabled(for displayID: CGDirectDisplayID) -> Bool {
@@ -120,11 +122,18 @@ class DisplayManager {
 
         // Clean up per-display state for disconnected displays
         let activeIDs = Set(detectedDisplays.map(\.id))
+
+        // Reset gamma for disconnected displays that were using software brightness
+        for (displayID, usesDDC) in perDisplayUsesDDC where !activeIDs.contains(displayID) {
+            if !usesDDC { SoftwareBrightnessManager.reset(for: displayID) }
+        }
+
         perDisplayModes = perDisplayModes.filter { activeIDs.contains($0.key) }
         perDisplayCurrentMode = perDisplayCurrentMode.filter { activeIDs.contains($0.key) }
         perDisplayBrightness = perDisplayBrightness.filter { activeIDs.contains($0.key) }
         perDisplayContrast = perDisplayContrast.filter { activeIDs.contains($0.key) }
-        perDisplayDDCAvailable = perDisplayDDCAvailable.filter { activeIDs.contains($0.key) }
+        perDisplayBrightnessAvailable = perDisplayBrightnessAvailable.filter { activeIDs.contains($0.key) }
+        perDisplayUsesDDC = perDisplayUsesDDC.filter { activeIDs.contains($0.key) }
         perDisplayHDREnabled = perDisplayHDREnabled.filter { activeIDs.contains($0.key) }
 
         // If the selected display was disconnected, pick a new one
@@ -141,8 +150,8 @@ class DisplayManager {
         for display in detectedDisplays {
             refreshModes(for: display)
 
-            // Try DDC on first refresh for external displays
-            if !display.isBuiltIn && perDisplayBrightness[display.id] == nil {
+            // Read brightness on first refresh (DDC for external, IOKit for built-in)
+            if perDisplayBrightness[display.id] == nil {
                 readBrightness(for: display)
             }
 
@@ -234,15 +243,31 @@ class DisplayManager {
         if hiDPIActive { disableHiDPI() } else { enableHiDPI(for: display) }
     }
 
-    // MARK: - DDC Brightness & Contrast
+    // MARK: - Brightness & Contrast (routes built-in vs external)
 
     func readBrightness(for display: ExternalDisplay) {
-        if let b = DDCManager.getBrightness(for: display.id) {
-            perDisplayBrightness[display.id] = b
-            perDisplayDDCAvailable[display.id] = true
-        }
-        if let c = DDCManager.getContrast(for: display.id) {
-            perDisplayContrast[display.id] = c
+        if display.isBuiltIn {
+            // Built-in: DisplayServices framework
+            if let b = BuiltInBrightnessManager.getBrightness(for: display.id) {
+                perDisplayBrightness[display.id] = b
+                perDisplayBrightnessAvailable[display.id] = true
+            }
+        } else {
+            // External: try DDC first, fall back to gamma
+            if let b = DDCManager.getBrightness(for: display.id) {
+                perDisplayBrightness[display.id] = b
+                perDisplayBrightnessAvailable[display.id] = true
+                perDisplayUsesDDC[display.id] = true
+                if let c = DDCManager.getContrast(for: display.id) {
+                    perDisplayContrast[display.id] = c
+                }
+            } else {
+                // Gamma fallback — always available
+                let b = SoftwareBrightnessManager.getBrightness(for: display.id)
+                perDisplayBrightness[display.id] = b
+                perDisplayBrightnessAvailable[display.id] = true
+                perDisplayUsesDDC[display.id] = false
+            }
         }
     }
 
@@ -253,7 +278,18 @@ class DisplayManager {
 
     func setBrightness(for displayID: CGDirectDisplayID, value: Int) {
         let clamped = max(0, min(100, value))
-        if DDCManager.setBrightness(for: displayID, value: clamped) {
+        let isBuiltIn = displays.first(where: { $0.id == displayID })?.isBuiltIn ?? false
+
+        let success: Bool
+        if isBuiltIn {
+            success = BuiltInBrightnessManager.setBrightness(for: displayID, value: clamped)
+        } else if perDisplayUsesDDC[displayID] == true {
+            success = DDCManager.setBrightness(for: displayID, value: clamped)
+        } else {
+            success = SoftwareBrightnessManager.setBrightness(for: displayID, value: clamped)
+        }
+
+        if success {
             perDisplayBrightness[displayID] = clamped
         }
     }
@@ -368,6 +404,13 @@ class DisplayManager {
     func applyArrangement(_ preset: DisplayArrangement.Preset, for display: ExternalDisplay) {
         if DisplayArrangement.applyPreset(preset, displayID: display.id) {
             statusMessage = "Arrangement: \(preset.rawValue)"
+        }
+    }
+
+    func setAsMainDisplay(for display: ExternalDisplay) {
+        if DisplayArrangement.setAsMainDisplay(display.id) {
+            statusMessage = "\(display.name) set as main display"
+            refresh()
         }
     }
 

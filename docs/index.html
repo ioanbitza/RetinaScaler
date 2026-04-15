@@ -542,7 +542,7 @@ footer a { color: var(--text-dim); }
   <div class="container">
     <p class="section-label">Features</p>
     <h2 class="section-title">Everything in one menu</h2>
-    <p class="section-desc">Per-display controls for resolution, refresh rate, brightness, and more. No extra apps needed.</p>
+    <p class="section-desc">Per-display controls for resolution, refresh rate, brightness, and more. No extra apps needed. Some features depend on monitor hardware capabilities.</p>
     <div class="features-grid fade-in">
       <div class="feature">
         <span class="feature-icon">&#10024;</span>
@@ -562,12 +562,12 @@ footer a { color: var(--text-dim); }
       <div class="feature">
         <span class="feature-icon">&#9728;</span>
         <h3>Brightness &amp; Contrast</h3>
-        <p>Hardware-level DDC/CI control. Adjusts your monitor's actual backlight over DisplayPort or HDMI.</p>
+        <p>Per-display brightness control. Uses native macOS APIs for built-in displays, DDC/CI for supported externals, and software dimming as a universal fallback.</p>
       </div>
       <div class="feature">
         <span class="feature-icon">&#127752;</span>
         <h3>HDR Toggle</h3>
-        <p>Enable or disable HDR on supported displays with a single click.</p>
+        <p>Enable or disable HDR mode with a single click. Requires an HDR-capable display and connection.</p>
       </div>
       <div class="feature">
         <span class="feature-icon">&#127769;</span>
@@ -583,6 +583,11 @@ footer a { color: var(--text-dim); }
         <span class="feature-icon">&#9638;</span>
         <h3>Display Arrangement</h3>
         <p>Quick presets to position displays relative to each other: left, right, above, below.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">&#9654;</span>
+        <h3>Main Display Selector</h3>
+        <p>Set any connected display as the main display. Moves the dock and menu bar with one click.</p>
       </div>
       <div class="feature">
         <span class="feature-icon">&#9881;</span>
