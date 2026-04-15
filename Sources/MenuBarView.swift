@@ -174,6 +174,7 @@ struct MenuBarView: View {
             }
 
             ActionRow("Quit RetinaScaler", icon: "power", tint: MenuTheme.accentDanger) {
+                SoftwareBrightnessManager.resetAll()
                 manager.disableHiDPI()
                 manager.hotkeyManager.stop()
                 NSApplication.shared.terminate(nil)
@@ -334,7 +335,7 @@ struct DisplaySection: View {
 
 
         // Brightness & Contrast
-        if manager.isDDCAvailable(for: display.id) {
+        if manager.isBrightnessAvailable(for: display.id) {
             SectionDivider()
             brightnessSlider
             if manager.perDisplayUsesDDC[display.id] == true {
@@ -754,32 +755,30 @@ struct DisplaySection: View {
     // MARK: - Brightness / Contrast
 
     private var brightnessSlider: some View {
-        let b = manager.brightness(for: display.id)
-        return SliderRow(
+        SliderRow(
             iconMin: "sun.min",
             iconMax: "sun.max.fill",
             iconMaxColor: .yellow,
             value: Binding(
-                get: { Double(max(0, b)) },
+                get: { Double(max(0, manager.brightness(for: display.id))) },
                 set: { manager.setBrightness(for: display.id, value: Int($0)) }
             ),
             range: 0...100,
-            displayValue: "\(max(0, b))%"
+            displayValue: "\(max(0, manager.brightness(for: display.id)))%"
         )
     }
 
     private var contrastSlider: some View {
-        let c = manager.contrast(for: display.id)
-        return SliderRow(
+        SliderRow(
             iconMin: "circle.lefthalf.filled",
             iconMax: "circle.righthalf.filled",
             iconMaxColor: .primary,
             value: Binding(
-                get: { Double(max(0, c)) },
+                get: { Double(max(0, manager.contrast(for: display.id))) },
                 set: { manager.setContrast(for: display.id, value: Int($0)) }
             ),
             range: 0...100,
-            displayValue: "\(max(0, c))%"
+            displayValue: "\(max(0, manager.contrast(for: display.id)))%"
         )
     }
 

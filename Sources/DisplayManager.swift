@@ -19,7 +19,7 @@ class DisplayManager {
     // Brightness state per display
     private(set) var perDisplayBrightness: [CGDirectDisplayID: Int] = [:]
     private(set) var perDisplayContrast: [CGDirectDisplayID: Int] = [:]
-    private(set) var perDisplayDDCAvailable: [CGDirectDisplayID: Bool] = [:]
+    private(set) var perDisplayBrightnessAvailable: [CGDirectDisplayID: Bool] = [:]
     /// Tracks whether external display uses DDC (true) or gamma fallback (false)
     private(set) var perDisplayUsesDDC: [CGDirectDisplayID: Bool] = [:]
 
@@ -67,9 +67,9 @@ class DisplayManager {
         return perDisplayContrast[d.id] ?? -1
     }
 
-    var ddcAvailable: Bool {
+    var brightnessAvailable: Bool {
         guard let d = selectedDisplay else { return false }
-        return perDisplayDDCAvailable[d.id] ?? false
+        return perDisplayBrightnessAvailable[d.id] ?? false
     }
 
     var hdrEnabled: Bool {
@@ -104,8 +104,8 @@ class DisplayManager {
         perDisplayContrast[displayID] ?? -1
     }
 
-    func isDDCAvailable(for displayID: CGDirectDisplayID) -> Bool {
-        perDisplayDDCAvailable[displayID] ?? false
+    func isBrightnessAvailable(for displayID: CGDirectDisplayID) -> Bool {
+        perDisplayBrightnessAvailable[displayID] ?? false
     }
 
     func isHDREnabled(for displayID: CGDirectDisplayID) -> Bool {
@@ -122,11 +122,17 @@ class DisplayManager {
 
         // Clean up per-display state for disconnected displays
         let activeIDs = Set(detectedDisplays.map(\.id))
+
+        // Reset gamma for disconnected displays that were using software brightness
+        for (displayID, usesDDC) in perDisplayUsesDDC where !activeIDs.contains(displayID) {
+            if !usesDDC { SoftwareBrightnessManager.reset(for: displayID) }
+        }
+
         perDisplayModes = perDisplayModes.filter { activeIDs.contains($0.key) }
         perDisplayCurrentMode = perDisplayCurrentMode.filter { activeIDs.contains($0.key) }
         perDisplayBrightness = perDisplayBrightness.filter { activeIDs.contains($0.key) }
         perDisplayContrast = perDisplayContrast.filter { activeIDs.contains($0.key) }
-        perDisplayDDCAvailable = perDisplayDDCAvailable.filter { activeIDs.contains($0.key) }
+        perDisplayBrightnessAvailable = perDisplayBrightnessAvailable.filter { activeIDs.contains($0.key) }
         perDisplayUsesDDC = perDisplayUsesDDC.filter { activeIDs.contains($0.key) }
         perDisplayHDREnabled = perDisplayHDREnabled.filter { activeIDs.contains($0.key) }
 
@@ -244,13 +250,13 @@ class DisplayManager {
             // Built-in: DisplayServices framework
             if let b = BuiltInBrightnessManager.getBrightness(for: display.id) {
                 perDisplayBrightness[display.id] = b
-                perDisplayDDCAvailable[display.id] = true
+                perDisplayBrightnessAvailable[display.id] = true
             }
         } else {
             // External: try DDC first, fall back to gamma
             if let b = DDCManager.getBrightness(for: display.id) {
                 perDisplayBrightness[display.id] = b
-                perDisplayDDCAvailable[display.id] = true
+                perDisplayBrightnessAvailable[display.id] = true
                 perDisplayUsesDDC[display.id] = true
                 if let c = DDCManager.getContrast(for: display.id) {
                     perDisplayContrast[display.id] = c
@@ -259,7 +265,7 @@ class DisplayManager {
                 // Gamma fallback — always available
                 let b = SoftwareBrightnessManager.getBrightness(for: display.id)
                 perDisplayBrightness[display.id] = b
-                perDisplayDDCAvailable[display.id] = true
+                perDisplayBrightnessAvailable[display.id] = true
                 perDisplayUsesDDC[display.id] = false
             }
         }

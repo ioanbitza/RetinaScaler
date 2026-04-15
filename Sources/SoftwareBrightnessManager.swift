@@ -13,8 +13,8 @@ enum SoftwareBrightnessManager {
     /// Gamma has no "read current brightness" — we only know what we set.
     private static var appliedBrightness: [CGDirectDisplayID: Int] = [:]
 
-    /// Returns the current software brightness (0–100), or nil if never set.
-    /// Defaults to 100 (no dimming) on first access.
+    /// Returns the current software brightness (0–100).
+    /// Defaults to 100 (no dimming) if no value has been cached yet or the current gamma cannot be read.
     static func getBrightness(for displayID: CGDirectDisplayID) -> Int {
         if let cached = appliedBrightness[displayID] {
             return cached
@@ -58,9 +58,23 @@ enum SoftwareBrightnessManager {
         return false
     }
 
-    /// Resets display to default gamma (full brightness).
+    /// Resets a single display to default gamma (full brightness).
     static func reset(for displayID: CGDirectDisplayID) {
-        CGDisplayRestoreColorSyncSettings()
+        let result = CGSetDisplayTransferByFormula(displayID,
+            0, 1.0, 1.0,
+            0, 1.0, 1.0,
+            0, 1.0, 1.0)
+
+        if result != .success {
+            logger.warning("Gamma reset failed for display \(displayID): \(result.rawValue)")
+        }
         appliedBrightness.removeValue(forKey: displayID)
+    }
+
+    /// Resets all displays that have been dimmed via gamma.
+    static func resetAll() {
+        for displayID in appliedBrightness.keys {
+            reset(for: displayID)
+        }
     }
 }
