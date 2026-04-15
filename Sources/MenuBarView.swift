@@ -333,11 +333,13 @@ struct DisplaySection: View {
         }
 
 
-        // DDC Brightness (external only)
-        if !display.isBuiltIn && manager.ddcAvailable {
+        // Brightness & Contrast
+        if manager.isDDCAvailable(for: display.id) {
             SectionDivider()
             brightnessSlider
-            contrastSlider
+            if manager.perDisplayUsesDDC[display.id] == true {
+                contrastSlider
+            }
         }
 
         // Per-display tools
@@ -539,6 +541,18 @@ struct DisplaySection: View {
                 .font(.system(size: 12, weight: .medium))
         } content: {
             VStack(alignment: .leading, spacing: 0) {
+                if CGDisplayIsMain(display.id) != 0 {
+                    MenuRow("Main Display") {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.green)
+                    }
+                } else {
+                    ActionRow("Set as Main Display", icon: "display", tint: .blue) {
+                        manager.setAsMainDisplay(for: display)
+                    }
+                }
+
                 if !display.isBuiltIn {
                     MenuRow("Arrangement") {
                         Menu("Position") {
@@ -547,17 +561,6 @@ struct DisplaySection: View {
                             }
                         }
                         .controlSize(.small)
-                    }
-                } else {
-                    MenuRow("Arrangement") {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.green)
-                            Text("Main Display")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                        }
                     }
                 }
             }
@@ -751,30 +754,32 @@ struct DisplaySection: View {
     // MARK: - Brightness / Contrast
 
     private var brightnessSlider: some View {
-        SliderRow(
+        let b = manager.brightness(for: display.id)
+        return SliderRow(
             iconMin: "sun.min",
             iconMax: "sun.max.fill",
             iconMaxColor: .yellow,
             value: Binding(
-                get: { Double(max(0, manager.brightness)) },
-                set: { manager.setBrightness(Int($0)) }
+                get: { Double(max(0, b)) },
+                set: { manager.setBrightness(for: display.id, value: Int($0)) }
             ),
             range: 0...100,
-            displayValue: "\(max(0, manager.brightness))%"
+            displayValue: "\(max(0, b))%"
         )
     }
 
     private var contrastSlider: some View {
-        SliderRow(
+        let c = manager.contrast(for: display.id)
+        return SliderRow(
             iconMin: "circle.lefthalf.filled",
             iconMax: "circle.righthalf.filled",
             iconMaxColor: .primary,
             value: Binding(
-                get: { Double(max(0, manager.contrast)) },
-                set: { manager.setContrast(Int($0)) }
+                get: { Double(max(0, c)) },
+                set: { manager.setContrast(for: display.id, value: Int($0)) }
             ),
             range: 0...100,
-            displayValue: "\(max(0, manager.contrast))%"
+            displayValue: "\(max(0, c))%"
         )
     }
 
@@ -1055,7 +1060,7 @@ struct SliderRow: View {
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
                 .frame(width: 14)
-            Slider(value: $value, in: range, step: 1)
+            Slider(value: $value, in: range)
                 .controlSize(.small)
             Image(systemName: iconMax)
                 .font(.system(size: 10))
@@ -1105,6 +1110,7 @@ struct TappableSection<Label: View, Content: View>: View {
 
             if isExpanded {
                 content()
+                    .padding(.top, 4)
             }
         }
     }

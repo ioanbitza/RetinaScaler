@@ -59,6 +59,40 @@ enum DisplayArrangement {
         return true
     }
 
+    /// Makes the given display the main display (origin 0,0).
+    /// The previous main display is shifted to the old position of the new main.
+    static func setAsMainDisplay(_ displayID: CGDirectDisplayID) -> Bool {
+        let mainID = CGMainDisplayID()
+        guard displayID != mainID else {
+            logger.info("Display \(displayID) is already the main display")
+            return true
+        }
+
+        let targetBounds = CGDisplayBounds(displayID)
+        let targetX = Int32(targetBounds.origin.x)
+        let targetY = Int32(targetBounds.origin.y)
+
+        var config: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&config) == .success else {
+            logger.error("CGBeginDisplayConfiguration failed for setAsMainDisplay")
+            return false
+        }
+
+        // Move target to (0,0) — this makes it the main display
+        CGConfigureDisplayOrigin(config, displayID, 0, 0)
+        // Move old main to where the target was
+        CGConfigureDisplayOrigin(config, mainID, -targetX, -targetY)
+
+        let result = CGCompleteDisplayConfiguration(config, .permanently)
+        if result != .success {
+            logger.error("CGCompleteDisplayConfiguration failed: \(result.rawValue)")
+            return false
+        }
+
+        logger.info("Display \(displayID) set as main display")
+        return true
+    }
+
     /// Common arrangements relative to primary display.
     enum Preset: String, CaseIterable {
         case leftOf = "Left (centered)"
