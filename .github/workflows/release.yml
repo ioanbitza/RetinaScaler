@@ -67,6 +67,8 @@ jobs:
           mkdir -p "$APP/Contents/MacOS"
           mkdir -p "$APP/Contents/Resources"
           cp .build/release/RetinaScaler "$APP/Contents/MacOS/RetinaScaler"
+          cp Assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+          cp Assets/MenuBarIcon@2x.png "$APP/Contents/Resources/MenuBarIcon@2x.png"
 
           cat > "$APP/Contents/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
@@ -91,6 +93,8 @@ jobs:
             <string>14.0</string>
             <key>LSUIElement</key>
             <true/>
+            <key>CFBundleIconFile</key>
+            <string>AppIcon</string>
             <key>NSHighResolutionCapable</key>
             <true/>
           </dict>
