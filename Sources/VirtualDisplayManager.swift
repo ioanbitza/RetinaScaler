@@ -16,7 +16,7 @@ enum VirtualDisplayManager {
     // We never release this — it lives until process exit.
     // macOS automatically cleans up virtual displays when the process dies.
     private static var vdPointer: UnsafeMutableRawPointer?
-    private static var mirroredPhysicalID: CGDirectDisplayID = 0
+    private(set) static var mirroredPhysicalID: CGDirectDisplayID = 0
     private static var cachedClasses: Classes?
 
     static var isActive: Bool { vdPointer != nil && mirroredPhysicalID != 0 }
