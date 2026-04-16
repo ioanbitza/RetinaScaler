@@ -136,6 +136,15 @@ class DisplayManager {
         perDisplayUsesDDC = perDisplayUsesDDC.filter { activeIDs.contains($0.key) }
         perDisplayHDREnabled = perDisplayHDREnabled.filter { activeIDs.contains($0.key) }
 
+        // Auto-disable VD if the mirrored physical display was disconnected
+        if VirtualDisplayManager.isActive {
+            let mirroredID = VirtualDisplayManager.mirroredPhysicalID
+            if mirroredID != 0 && !activeIDs.contains(mirroredID) {
+                logger.info("Mirrored display \(mirroredID) disconnected, disabling Virtual Display")
+                disableHiDPI()
+            }
+        }
+
         // If the selected display was disconnected, pick a new one
         if let selected = selectedDisplay, !activeIDs.contains(selected.id) {
             selectedDisplay = externalDisplays.first
